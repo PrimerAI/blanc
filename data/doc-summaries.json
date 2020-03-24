@@ -1,0 +1,16 @@
+[
+    {
+        "doc": "Jack walked all the way over to go to the big market and buy a few loaves of bread for himself.",
+        "summaries": [
+            "Jack bought bread from the market.",
+            "Jack went to the market."
+        ]
+    },
+    {
+        "doc": "As Jill started taking a walk in the park, she certainly noticed that the trees were extra green this year.",
+        "summaries": [
+            "Jill saw green trees in the park.",
+            "The trees were green."
+        ]
+    }
+]

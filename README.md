@@ -3,6 +3,8 @@ This is the reference implementation of BLANC-help and BLANC-tune as defined in 
 
 BLANC is a new approach to the automatic estimation of document summary quality. Our goal is to measure the functional performance of a summary with an objective, reproducible, and fully automated method. Our approach achieves this by measuring the performance boost gained by a pre-trained language model with access to a document summary while carrying out its language understanding task on the document's text. We present evidence that BLANC scores have at least as good correlation with human evaluations as do the ROUGE family of summary quality measurements. And unlike ROUGE, the BLANC method does not require human-written reference summaries, allowing for fully human-free summary quality estimation.
 
+Two types of BLANC scores are introduced in the paper and available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases.
+
 ## Setup
 1. Install Python 3.6 or higher
 2. Install with `pip install blanc`
@@ -13,14 +15,14 @@ Note that we pinned the `transformers` requirement to 2.4.0 due to Rust installa
 Basic usage:
 ```python
 >>> from blanc import BlancHelp, BlancTune
->>> document = "Jack walked all the way over to go to the big market and buy a few loaves of bread for himself."
->>> summary = "Jack bought bread from the market"
+>>> document = "Jack drove his minivan to the bazaar to purchase milk and honey for his large family."
+>>> summary = "Jack bought milk and honey."
 >>> blanc_help = BlancHelp()
 >>> blanc_tune = BlancTune()
 >>> blanc_help.eval_once(document, summary)
-0.14285714285714285
+0.1111111111111111
 >>> blanc_tune.eval_once(document, summary)
-0.14285714285714285
+0.2222222222222222
 ```
 
 By default, BLANC is run on the CPU. Using CUDA with batching is much faster:
@@ -32,33 +34,34 @@ With these batch sizes, BLANC-help takes around 1.4 sec per summary and BLANC-tu
 
 If you want to compute the BLANC scores of many documents and summaries at once, you can use `eval_pairs()` or `eval_summaries_for_docs()`. `eval_pairs()` is useful when you have many documents, each with a single summary:
 ```python
->>> documents = ["Jack walked all the way over to go to the big market and buy a few loaves of bread for himself.", "As Jill started taking a walk in the park, she certainly noticed that the trees were extra green this year."]
->>> summaries = ["Jack bought bread from the market.", "Jill saw green trees in the park."]
+>>> documents = ["Jack drove his minivan to the bazaar to purchase milk and honey for his large family.", "As Jill started taking a walk in the park, she certainly noticed that the trees were extra green this year."]
+>>> summaries = ["Jack bought milk and honey.", "Jill saw green trees in the park."]
 >>> blanc_help.eval_pairs(documents, summaries)
-[0.14285714285714285, 0.07142857142857142]
+[0.1111111111111111, 0.07142857142857142]
 ```
 
 `eval_summaries_for_docs()` is useful when you have many documents, each with many summaries:
 ```python
+>>> doc_summaries = [["Jack bought milk and honey.", "Jack drove to the bazaar in a minivan"], ["Jill saw green trees in the park.", "The trees were green."]]
 >>> blanc_tune.eval_summaries_for_docs(documents, doc_summaries)
-[[0.14285714285714285, 0.14285714285714285], [0.14285714285714285, 0.07142857142857142]]
+[[0.2222222222222222, 0.2222222222222222], [0.14285714285714285, 0.07142857142857142]]
 ```
 
 ## CLI Usage
 A CLI for computing BLANC scores is provided for convenience.
 ```
-$ blanc help --doc "Jack walked all the way over to go to the big market and buy a few loaves of bread for himself." --summary "Jack bought bread from the market."
-0.14285714285714285
+$ blanc help --doc "Jack drove his minivan to the bazaar to purchase milk and honey for his large family." --summary "Jack bought milk and honey."
+0.1111111111111111
 ```
 
 Input data can also be provided in JSON format, with sample JSON input provided in `data/`
 ```
 $ blanc help --single_json data/single.json
-0.14285714285714285
+0.1111111111111111
 $ blanc tune --pairs_json data/pairs.json
-[0.2857142857142857, 0.21428571428571427]
+[0.2222222222222222, 0.14285714285714285]
 $ blanc tune --doc_summaries_json data/doc-summaries.json
-[[0.2857142857142857, 0.14285714285714285], [0.14285714285714285, 0.14285714285714285]]
+[[0.2222222222222222, 0.2222222222222222], [0.14285714285714285, 0.07142857142857142]]
 ```
 
 The `single_json` input format expects a single JSON blob with keys `document` and `summary`. The `pairs_json` input format expects a list of JSON blobs, each with a `document` and a `summary`. The `doc_summaries_json` input format expects a list of JSON blobs, each with keys `document` and `summaries`, where `summaries` is a list of strings. These keys are customizable with the `doc_key`, `summary_key`, and `summaries_key` arguments. By default, the output is printed to STDOUT, but it can be written to a JSON file provided with the `output_json` argument.

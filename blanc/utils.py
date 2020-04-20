@@ -1,6 +1,7 @@
 from collections import namedtuple
 import random
 import unicodedata
+import copy
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -51,6 +52,7 @@ Config = namedtuple(
         'random_seed',
         'inference_batch_size',
         'inference_mask_evenly',
+        'len_sent_allow_cut',
         'filler_token',
         'help_sep',
         'finetune_batch_size',
@@ -78,6 +80,7 @@ Defaults = Config(
     random_seed=1,
     inference_batch_size=1,
     inference_mask_evenly=True,
+    len_sent_allow_cut=100,
     filler_token='.',
     help_sep='',
     finetune_batch_size=1,
@@ -92,11 +95,9 @@ Defaults = Config(
 
 def batch_data(data, batch_size):
     """Given a list, batch that list into chunks of size batch_size
-
     Args:
         data (List): list to be batched
         batch_size (int): size of each batch
-
     Returns:
         batches (List[List]): a list of lists, each inner list of size batch_size except possibly
             the last one.
@@ -110,13 +111,11 @@ def batch_data(data, batch_size):
 
 def is_token_large_enough(token, next_token, min_token_lengths):
     """Determine if a token is large enough according to min_token_lengths
-
     Args:
         token (str): a wordpiece token
         next_token (str): the next wordpiece token in the sequence
         min_token_lengths (Tuple[int, int, int]): minimum token lengths for normal tokens, lead
             tokens, and followup tokens
-
     Returns:
         large_enough (bool): whether or not the token is large enough
     """
@@ -135,14 +134,12 @@ def is_token_large_enough(token, next_token, min_token_lengths):
 def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token):
     """Produce several maskings for the given tokens where each masking is created by masking every
     "gap" tokens, as long as the token is large enough according to min_token_lengths.
-
     Args:
         tokens (List[str]): a sequence of wordpiece tokens
         gap (int): the spacing in-between masked tokens
         min_token_lengths (Tuple[int, int, int]): minimum token lengths for normal tokens, lead
             tokens, and followup tokens
         mask_token (str): wordpiece token to use for masking
-
     Returns:
         masked_inputs (List[List[str]]): a list of token sequences, where each token sequence
             contains masked tokens separated by "gap" tokens.
@@ -174,13 +171,11 @@ def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token):
 
 def mask_tokens_randomly(tokens, min_token_lengths, mask_token):
     """Produce several maskings for the given tokens by randomly choosing tokens to mask
-
     Args:
         tokens (List[str]): a sequence of wordpiece tokens
         min_token_lengths (Tuple[int, int, int]): minimum token lengths for normal tokens, lead
             tokens, and followup tokens
         mask_token (str): wordpiece token to use for masking
-
     Returns:
         masked_inputs (List[List[str]]): a list of token sequences, where each token sequence
             contains masked tokens chosen randomly.
@@ -218,12 +213,10 @@ def mask_tokens_randomly(tokens, min_token_lengths, mask_token):
 def stack_tensor(input_list, pad_value, device):
     """Given a batch of inputs, stack them into a single tensor on the given device, padding them
     at the back with pad_value to make sure they are all the same length.
-
     Args:
         input_list (List[List[int]]): a list of input sequences
         pad_value (int): the value to use for padding input sequences to make them the same length
         device (str): torch device (usually "cpu" or "cuda")
-
     Returns:
         stacked_tensor (torch.LongTensor): a tensor of dimensions (batch size) x (seq length)
     """
@@ -241,12 +234,10 @@ def stack_tensor(input_list, pad_value, device):
 
 def get_input_tensors(input_batch, device, tokenizer):
     """Given a list of BertInputs, return the relevant tensors that are fed into BERT.
-
     Args:
         input_batch (List[BertInput]): a batch of model inputs
         device (str): torch device (usually "cpu" or "cuda")
         tokenizer (BertTokenizer): the wordpiece tokenizer used for BERT
-
     Returns:
         input_ids (torch.LongTensor): ids corresponding to input tokens
         attention_mask (torch.LongTensor): tells BERT about parts of the input to ignore
@@ -274,13 +265,11 @@ def get_input_tensors(input_batch, device, tokenizer):
 def determine_correctness(outputs, answers):
     """Given dicts corresponding to predicted tokens and actual tokens at different indices, return
     a list of bools for whether or not those predictions were correct.
-
     Args:
         outputs (List[Dict[int, str]]): each list represents a different input masking, and each
             dict maps indices to model predictions
         answers (List[Dict[int, str]]): each list represents a different input masking, and each
             dict maps indices to original tokens
-
     Returns:
         correctness (List[bool]): a list of values that are True if the model made a correct
             prediction and False otherwise
@@ -296,36 +285,83 @@ def determine_correctness(outputs, answers):
 
 def measure_relative(S):
     """Calculate the "measure-relative" score as defined in the paper
-
     Args:
         S (List[List[int]]): accuracy counts as defined in the paper
-
     Returns:
         score (float): measure-relative score
     """
-    return (S[0][1] - S[1][0]) / (S[0][0] + S[1][1] + S[0][1] + S[1][0])
+    denom = S[0][0] + S[1][1] + S[0][1] + S[1][0]
+    if denom == 0:
+        return 0
+    return (S[0][1] - S[1][0]) / denom
 
 
 def measure_improve(S):
     """Calculate the "measure-improve" score as defined in the paper
-
     Args:
         S (List[List[int]]): accuracy counts as defined in the paper
-
     Returns:
         score (float): measure-improve score
     """
-    return S[0][1] / (S[0][0] + S[1][1] + S[0][1])
+    denom = S[0][0] + S[1][1] + S[0][1]
+    if denom == 0:
+        return 0
+    return S[0][1] / denom
 
 
 def clean_text(text):
     """Return a cleaned version of the input text
-
     Args:
         text (str): dirty text
-
     Returns:
         text (str): cleaned text
     """
     text = unicodedata.normalize('NFKD', text)
     return text
+
+
+def truncate_list_of_lists(sents_tokenized, num_max, truncate_bottom=True):
+    """Return a truncated list, with summ of tokens not exceeding maximum.
+    Truncate by lists. If single left list is still too long, truncate it by tokens.
+    Args:
+        num_max (int): maximal allowed number of tokens.
+        truncate_bottom (Boolean): truncate starting from bottom lists.
+    Returns:
+        sents_tokenized (list): truncated list
+    """
+    sents_truncated = []
+    if truncate_bottom:
+        len_truncated = 0
+        # Cut by sentences:
+        for sent in sents_tokenized:
+            len_truncated_maybe = len_truncated + len(sent)
+            if len_truncated_maybe > num_max:
+                break
+            len_truncated = len_truncated_maybe
+            sents_truncated.append(sent)
+            if len_truncated == num_max:
+                break
+        if not sents_truncated:
+            sents_truncated = [copy.deepcopy(sents_tokenized[0])]
+            len_truncated = len(sents_truncated[0])
+            # Cut by tokens - always from the top:
+            if len_truncated > num_max:
+                len_remove = len_truncated - num_max
+                sents_truncated[0] = sents_truncated[0][:len_remove]
+    else:
+        sents_truncated = copy.deepcopy(sents_tokenized)
+        len_truncated = sum([len(s) for s in sents_tokenized])
+        # Cut by sentences:
+        for sent in sents_tokenized:
+            if len_truncated <= num_max:
+                break
+            sents_truncated = sents_truncated[1:]
+            len_truncated = len_truncated - len(sent)
+        if not sents_truncated:
+            sents_truncated = [copy.deepcopy(sents_tokenized[-1])]
+            len_truncated = len(sents_truncated[0])
+            # Cut by tokens - always from the top:
+            if len_truncated > num_max:
+                len_remove = len_truncated - num_max
+                sents_truncated[0] = sents_truncated[0][len_remove:]
+    return sents_truncated

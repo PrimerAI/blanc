@@ -10,7 +10,7 @@ from torch.nn.utils.rnn import pad_sequence
 import tqdm
 from transformers import BertForMaskedLM, BertTokenizer, AdamW, get_linear_schedule_with_warmup
 
-from blanc.utils import (
+from utils import (
     BertInput,
     Defaults,
     batch_data,
@@ -21,6 +21,7 @@ from blanc.utils import (
     measure_relative,
     measure_improve,
     clean_text,
+    truncate_list_of_lists,
     NOT_MASKED,
     TOKEN_TYPE_A,
     LABEL_IGNORE,
@@ -45,6 +46,7 @@ class Blanc:
         device=Defaults.device,
         inference_batch_size=Defaults.inference_batch_size,
         inference_mask_evenly=Defaults.inference_mask_evenly,
+        len_sent_allow_cut=Defaults.len_sent_allow_cut
     ):
         """This class should not be instantiated directly: instead use BlancHelp or BlancTune"""
         self.model_name = model_name
@@ -56,16 +58,15 @@ class Blanc:
         self.device = device
         self.inference_batch_size = inference_batch_size
         self.inference_mask_evenly = inference_mask_evenly
+        self.len_sent_allow_cut = len_sent_allow_cut
 
         self.model_tokenizer = BertTokenizer.from_pretrained(model_name)
 
     def eval_once(self, doc, summary):
         """Calculate the BLANC score for a single doc with a single summary.
-
         Args:
             doc (str): The input document
             summary (str): The input summary for the input document
-
         Returns:
             score (float): The BLANC score for the input
         """
@@ -75,11 +76,9 @@ class Blanc:
 
     def eval_pairs(self, docs, summaries):
         """Calculate the BLANC score for multiple docs, each with a single summary
-
         Args:
             docs (List[str]): A list of input documents
             summaries (List[str]): The input summary for each input document
-
         Returns:
             scores (List[float]): The BLANC scores for the inputs
         """
@@ -90,24 +89,21 @@ class Blanc:
 
     def eval_summaries_for_docs(self, docs, doc_summaries):
         """Calculate the BLANC score for multiple docs, each with multiple summaries
-
         Args:
             docs (List[str]): A list of input documents
             doc_summaries (List[List[str]]): A list of summaries for every input document
-
         Returns:
             scores (List[List[float]]): A list of blanc scores corresponding to each summary for
                 each document
         """
         raise NotImplementedError()
 
-    def get_inputs_for_sentence(self, sent_tokens, summary_tokens):
+    def get_inputs_for_sentence(self, sent_tokens, summary_tokens, sep):
         """Used by subclasses to specify inference inputs corresponding to a sentence
-
         Args:
             sent_tokens (List[str]): list of tokens corresponding to sentence
             summary_tokens (List[str]): list of tokens corresponding to a summary
-
+            sep (List[str]): List of tokens corresponding to a separator between summary and sentence
         Returns:
             inputs (List[BertInput]): a list of masked token inputs to BERT
             answers (List[Dict[int, str]]): a list of "answer" dicts, where each answer dict maps
@@ -115,16 +111,14 @@ class Blanc:
         """
         raise NotImplementedError()
 
-    def mask_and_infer(self, model, docs, doc_summaries, loading_bar=True):
+    def mask_and_infer(self, model, docs, doc_summaries, loading_bar=True, sep=None):
         """Run the given model on masked versions of the provided doc_summaries and collect model
         output
-
         Args:
             model (BertForMaskedLM): a BERT for masked language modeling torch model
             docs (List[str]): A list of input documents
             doc_summaries (List[List[str]]): A list of summaries for every input document
             loading_bar (bool): whether or not to use a tqdm loading bar to show progress
-
         Returns:
             all_outputs (List[List[List[Dict[int, str]]]]): for each doc, for each summary for the
                 doc, for each input sequence for the summary, we have a dict mapping indices to
@@ -138,7 +132,7 @@ class Blanc:
         for doc, summaries in zip(docs, doc_summaries):
             doc_inputs, doc_answers = [], []
             for summary in summaries:
-                summary_inputs, summary_answers = self.get_inference_inputs(doc, summary)
+                summary_inputs, summary_answers = self.get_inference_inputs(doc, summary, sep)
                 doc_inputs.append(summary_inputs)
                 doc_answers.append(summary_answers)
             all_inputs.append(doc_inputs)
@@ -169,13 +163,13 @@ class Blanc:
 
         return all_outputs, all_answers
 
-    def get_inference_inputs(self, doc, summary=None):
-        """Get the inference inputs for a document, which possibly includes a summary
 
+    def get_inference_inputs(self, doc, summary=None, sep=None):
+        """Get the inference inputs for a document, which possibly includes a summary
         Args:
             doc (str): an input document
             summary (str): an optional input summary
-
+            len_sent_allow_cut: minimal number of tokens to leave in sentence if need to cut input for inference.
         Returns:
             summary_inputs (List[BertInput]): a list of BertInputs for inference
             summary_answers (List[Dict[int, str]]): each dict maps token indices back to their
@@ -187,13 +181,42 @@ class Blanc:
 
         if summary is not None:
             summary = clean_text(summary)
-            summary_tokens = self.model_tokenizer.tokenize(summary)
+            summary_sents = sent_tokenize(summary)
+            summary_sent_tokens = [self.model_tokenizer.tokenize(sent) for sent in summary_sents]
+            num_summary_tokens = [len(s) for s in summary_sent_tokens]
+            len_summary = sum(num_summary_tokens)
         else:
-            summary_tokens = None
+            summary_sent_tokens = None
+            len_summary = 0
 
+        len_sep = 0
+        if sep:
+            len_sep = len(sep)
         summary_inputs, summary_answers = [], []
-        for sent_tokens in doc_sent_tokens:
-            inputs, answers = self.get_inputs_for_sentence(sent_tokens, summary_tokens)
+        half_num_sents = len(doc_sent_tokens)
+        for i_sent, sent_tokens in enumerate(doc_sent_tokens):
+            # Cut summary+sentence to allowed input size. 2 more tokens: [CLS], [SEP]
+            summary_tokens = [t for sublist in summary_sent_tokens for t in sublist]
+            len_input_estimate = 2 + len_summary + len_sep + len(sent_tokens)
+            len_excess = BERT_MAX_TOKENS - len_input_estimate
+            if len_excess > 0:
+                # Cut sentence to certain limit:
+                len_cut_sent = min(len_excess, len(sent_tokens)-self.len_sent_allow_cut)
+                len_excess_new = len_excess - len_cut_sent
+                len_sent_new = len(sent_tokens) - len_cut_sent
+                sent_tokens = sent_tokens[:len_sent_new]
+                # If not enough, cut summary too:
+                if len_excess_new > 0 and summary_sent_tokens:
+                    truncate_bottom = True
+                    if i_sent > half_num_sents:
+                        truncate_bottom = False
+                    summary_truncated = truncate_list_of_lists(
+                        sents_tokenized = summary_sent_tokens, 
+                        num_max = BERT_MAX_TOKENS - len_excess_new, 
+                        truncate_bottom = truncate_bottom)
+                    summary_tokens = [t for sublist in summary_truncated for t in sublist]
+            # now it is assured that everything fits into max input size
+            inputs, answers = self.get_inputs_for_sentence(sent_tokens, summary_tokens, sep)
             summary_inputs += inputs
             summary_answers += answers
         return summary_inputs, summary_answers
@@ -202,49 +225,27 @@ class Blanc:
         self,
         answers,
         sent_tokens,
-        help_tokens=[],
-        help_sep=[],
-        truncate_bottom=True
+        help_tokens=None,
+        help_sep=None,
     ):
         """Given input tokens, assemble them into the tensors used by the model for inference
-
         Args:
             answers (Dict[int, str]): a mapping of input token indices to their original value
             sent_tokens (List[str]): tokens corresponding to an input sentence
             help_tokens (List[str]): tokens corresponding to an input summary or filler
             help_sep (List[str]): tokens to put between the summary/filler and the sentence
-            truncate_bottom (bool): if the input is too long, we will cut summary tokens from the
-                bottom if True, and cut summary tokens from the top if False
-
         Returns:
             model_input (BertInput): an input to the BERT model
             shifted_answers (Dict[int, str]): the input answers but with shifted indices that take
                 into account the summary/filler and starting CLS token
-
         Raises:
             ValueError: if the sentence itself is longer than the BERT_MAX_TOKENS limit, we raise
                 this error as opposed to truncating the sentence
         """
-        num_tokens = (
-            1 # [CLS]
-            + len(help_tokens)
-            + len(help_sep)
-            + len(sent_tokens)
-            + 1 # [SEP]
-        )
-
-        excess_tokens = num_tokens - BERT_MAX_TOKENS
-        if excess_tokens > 0:
-            if excess_tokens > len(help_tokens):
-                raise ValueError(
-                    "Sentence from document is longer than the BERT {BERT_MAX_TOKENS} limit"
-                )
-
-            if truncate_bottom:
-                help_tokens = help_tokens[:-excess_tokens]
-            else:
-                help_tokens = help_tokens[excess_tokens:]
-
+        if not help_tokens:
+            help_tokens = []
+        if not help_sep:
+            help_sep = []
         all_tokens = (
             [self.model_tokenizer.cls_token]
             + help_tokens
@@ -274,16 +275,13 @@ class Blanc:
 
     def run_inference_batch(self, model, batch):
         """Run an inference batch through the provided model
-
         Args:
             model (BertForMaskedLM): a BERT for masked language modeling torch model
             batch (List[BertInput]): the input batch to run through the model
-
         Returns:
             all_predictions (List[Dict[int, str]]): predicted tokens for every masked token in
                 the inputs
         """
-        model_outputs = []
         input_ids, attention_mask, token_type_ids, _ = get_input_tensors(
             batch,
             device=self.device,
@@ -310,11 +308,9 @@ class Blanc:
 
     def mask_input_tokens(self, tokens, is_finetune):
         """Given a list of tokens, produce maskings for them
-
         Args:
             tokens (List[str]): a sequence of wordpiece tokens
             is_finetune (bool): whether or not these tokens are going to be used for finetuning
-
         Returns:
             masked_inputs (List[List[str]]): a list of token sequences, where each token sequence
                 contains some masked tokens.
@@ -349,21 +345,19 @@ class Blanc:
     def judge_output(self, base_output, assisted_output, base_answers, assisted_answers):
         """Given a model's predicted tokens with and without assistance, as well as the correct
         token predictions, produce the BLANC score
-
         Args:
-	    base_outputs (List[Dict[int, str]]): outputs without using "help" or "tune." Each list
+        base_outputs (List[Dict[int, str]]): outputs without using "help" or "tune." Each list
                 represents a different input masking, and each dict maps indices to model
                 predictions.
-	    assisted_outputs (List[Dict[int, str]]): outputs using "help" or "tune." Each list
+        assisted_outputs (List[Dict[int, str]]): outputs using "help" or "tune." Each list
                 represents a different input masking, and each dict maps indices to model
                 predictions.
-	    base_answers (List[Dict[int, str]]): answers without using "help" or "tune." Each list
+        base_answers (List[Dict[int, str]]): answers without using "help" or "tune." Each list
                 represents a different input masking, and each dict maps indices to original
                 tokens.
-	    assisted_answers (List[Dict[int, str]]): answers using "help" or "tune." Each
+        assisted_answers (List[Dict[int, str]]): answers using "help" or "tune." Each
                 list represents a different input masking, and each dict maps indices to original
                 tokens.
-
         Returns:
             score (float): the BLANC score
         """
@@ -377,7 +371,6 @@ class Blanc:
         )
 
         S = [[0, 0], [0, 0]]
-        scores = []
         for base_correct, assisted_correct in zip(base_correctness, assisted_correctness):
             S[int(base_correct)][int(assisted_correct)] += 1
 
@@ -388,14 +381,12 @@ class Blanc:
         else:
             raise NotImplementedError(f'unknown measure {self.measure}')
 
-        return score
+        return score, S
 
     def init_model(self, device):
         """Initialize the language model and send it to the given device
-
         Args:
             device (str): torch device (usually "cpu" or "cuda")
-
         Returns:
             model (BertForMaskedLM): a BERT for masked language modeling torch model
         """
@@ -418,6 +409,7 @@ class BlancHelp(Blanc):
         device=Defaults.device,
         inference_batch_size=Defaults.inference_batch_size,
         inference_mask_evenly=Defaults.inference_mask_evenly,
+        len_sent_allow_cut=Defaults.len_sent_allow_cut,
         filler_token=Defaults.filler_token,
         help_sep=Defaults.help_sep,
     ):
@@ -432,6 +424,7 @@ class BlancHelp(Blanc):
             device=device,
             inference_batch_size=inference_batch_size,
             inference_mask_evenly=inference_mask_evenly,
+            len_sent_allow_cut=len_sent_allow_cut,
         )
 
         self.filler_token = filler_token
@@ -443,7 +436,8 @@ class BlancHelp(Blanc):
         """Calculate the BLANC score for multiple docs, each with multiple summaries.
         See documentation in superclass.
         """
-        all_outputs, all_answers = self.mask_and_infer(self.model, docs, doc_summaries)
+        all_outputs, all_answers = self.mask_and_infer(
+            self.model, docs, doc_summaries, sep=self.help_sep)
 
         all_scores = []
         for doc_outputs, doc_answers in zip(all_outputs, all_answers):
@@ -460,7 +454,7 @@ class BlancHelp(Blanc):
 
         return all_scores
 
-    def get_inputs_for_sentence(self, sent_tokens, summary_tokens):
+    def get_inputs_for_sentence(self, sent_tokens, summary_tokens, sep):
         """Get inference inputs corresponding to a given sentence. For BLANC-help, we get several
         maskings for each sentence, and for each of these maskings we have an input with the
         summary prepended, and an input with a filler prepended. See documentation in superclass.
@@ -510,6 +504,7 @@ class BlancTune(Blanc):
         finetune_batch_size=Defaults.finetune_batch_size,
         finetune_epochs=Defaults.finetune_epochs,
         finetune_mask_evenly=Defaults.finetune_mask_evenly,
+        len_sent_allow_cut=Defaults.len_sent_allow_cut,
         finetune_chunk_size=Defaults.finetune_chunk_size,
         finetune_chunk_stride=Defaults.finetune_chunk_stride,
         learning_rate=Defaults.learning_rate,
@@ -526,6 +521,7 @@ class BlancTune(Blanc):
             device=device,
             inference_batch_size=inference_batch_size,
             inference_mask_evenly=inference_mask_evenly,
+            len_sent_allow_cut=len_sent_allow_cut,
         )
 
         self.finetune_batch_size = finetune_batch_size
@@ -601,7 +597,7 @@ class BlancTune(Blanc):
 
         return all_scores
 
-    def get_inputs_for_sentence(self, sent_tokens, summary_tokens):
+    def get_inputs_for_sentence(self, sent_tokens, summary_tokens, sep):
         """Get inference inputs corresponding to a given sentence. For BLANC-tune, we get several
         maskings for each sentence, and each masking is a single input. See documentation in
         superclass.
@@ -621,7 +617,6 @@ class BlancTune(Blanc):
 
     def finetune(self, model, summary):
         """Finetune the given model on a "dataset" produced from chunks of the given summary.
-
         Args:
             model (BertForMaskedLM): a BERT for masked language modeling torch model
             summary (str): the summary to finetune on
@@ -677,10 +672,8 @@ class BlancTune(Blanc):
 
     def prepare_finetuning_data(self, summary):
         """Create a finetuning dataset using chunks of the given summary
-
         Args:
             summary (str): the input summary to finetune on
-
         Returns:
             model_inputs (List[BertInput]): a list of inputs to use as the finetuning dataset
         """
@@ -694,10 +687,8 @@ class BlancTune(Blanc):
 
     def assemble_finetuning_input(self, chunk_tokens):
         """Given input tokens, assemble them into the tensors used by the model for finetuning
-
         Args:
             chunk_tokens (List[str]): a token sequence
-
         Returns:
             model_inputs (List[BertInput]): BertInputs corresponding to different maskings of
                 chunk_tokens

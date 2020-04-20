@@ -10,7 +10,7 @@ from torch.nn.utils.rnn import pad_sequence
 import tqdm
 from transformers import BertForMaskedLM, BertTokenizer, AdamW, get_linear_schedule_with_warmup
 
-from utils import (
+from .utils import (
     BertInput,
     Defaults,
     batch_data,
@@ -463,23 +463,19 @@ class BlancHelp(Blanc):
 
         filler_tokens = [self.filler_token] * len(summary_tokens)
         inputs, final_answers = [], []
-        for sent_idx, (sent_masking, init_answer) in enumerate(zip(sent_maskings, init_answers)):
-            truncate_bottom = sent_idx > len(sent_maskings) / 2
+        for sent_masking, init_answer in zip(sent_maskings, init_answers):
 
             help_input, help_answers = self.assemble_inference_input(
                 answers=init_answer,
                 sent_tokens=sent_masking,
                 help_tokens=summary_tokens,
-                help_sep=self.help_sep,
-                truncate_bottom=truncate_bottom,
-            )
+                help_sep=self.help_sep)
+
             filler_input, filler_answers = self.assemble_inference_input(
                 answers=init_answer,
                 sent_tokens=sent_masking,
                 help_tokens=filler_tokens,
-                help_sep=self.help_sep,
-                truncate_bottom=truncate_bottom,
-            )
+                help_sep=self.help_sep)
 
             inputs += [help_input, filler_input]
             final_answers += [help_answers, filler_answers]

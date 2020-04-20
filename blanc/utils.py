@@ -323,7 +323,9 @@ def clean_text(text):
 def truncate_list_of_lists(sents_tokenized, num_max, truncate_bottom=True):
     """Return a truncated list, with summ of tokens not exceeding maximum.
     Truncate by lists. If single left list is still too long, truncate it by tokens.
+    In our context each element of sents_tokenized is a sentence represented as a list of tokens.
     Args:
+        sents_tokenized: List, each element is a list.
         num_max (int): maximal allowed number of tokens.
         truncate_bottom (Boolean): truncate starting from bottom lists.
     Returns:

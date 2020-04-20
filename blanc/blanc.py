@@ -120,6 +120,7 @@ class Blanc:
             docs (List[str]): A list of input documents
             doc_summaries (List[List[str]]): A list of summaries for every input document
             loading_bar (bool): whether or not to use a tqdm loading bar to show progress
+            sep (str): Separator between the inference help (summary) and a sentence from the doc
         Returns:
             all_outputs (List[List[List[Dict[int, str]]]]): for each doc, for each summary for the
                 doc, for each input sequence for the summary, we have a dict mapping indices to
@@ -170,7 +171,7 @@ class Blanc:
         Args:
             doc (str): an input document
             summary (str): an optional input summary
-            len_sent_allow_cut: minimal number of tokens to leave in sentence if need to cut input for inference.
+            sep (str): Separator between the inference help (summary) and a sentence from the doc
         Returns:
             summary_inputs (List[BertInput]): a list of BertInputs for inference
             summary_answers (List[Dict[int, str]]): each dict maps token indices back to their

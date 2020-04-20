@@ -183,11 +183,11 @@ class Blanc:
             summary = clean_text(summary)
             summary_sents = sent_tokenize(summary)
             summary_sent_tokens = [self.model_tokenizer.tokenize(sent) for sent in summary_sents]
-            num_summary_tokens = [len(s) for s in summary_sent_tokens]
-            len_summary = sum(num_summary_tokens)
+            #num_summary_tokens = [len(s) for s in summary_sent_tokens]
+            #len_summary = sum(num_summary_tokens)
         else:
-            summary_sent_tokens = None
-            len_summary = 0
+            summary_sent_tokens = [[]]
+            #len_summary = 0
 
         len_sep = 0
         if sep:
@@ -197,25 +197,28 @@ class Blanc:
         for i_sent, sent_tokens in enumerate(doc_sent_tokens):
             # Cut summary+sentence to allowed input size. 2 more tokens: [CLS], [SEP]
             summary_tokens = [t for sublist in summary_sent_tokens for t in sublist]
-            len_input_estimate = 2 + len_summary + len_sep + len(sent_tokens)
+            len_input_estimate = 2 + len(summary_tokens) + len_sep + len(sent_tokens)
             len_excess = BERT_MAX_TOKENS - len_input_estimate
             if len_excess > 0:
                 # Cut sentence to certain limit:
                 len_cut_sent = min(len_excess, len(sent_tokens)-self.len_sent_allow_cut)
-                len_excess_new = len_excess - len_cut_sent
                 len_sent_new = len(sent_tokens) - len_cut_sent
                 sent_tokens = sent_tokens[:len_sent_new]
+                len_excess_new = len_excess - len_cut_sent
                 # If not enough, cut summary too:
-                if len_excess_new > 0 and summary_sent_tokens:
+                assert len_excess_new <= 0 or (summary_sent_tokens and summary_sent_tokens[0])
+                if len_excess_new > 0:
                     truncate_bottom = True
                     if i_sent > half_num_sents:
                         truncate_bottom = False
+                    len_summary_max = BERT_MAX_TOKENS - 2 - len_sep - len(sent_tokens)
                     summary_truncated = truncate_list_of_lists(
                         sents_tokenized = summary_sent_tokens, 
-                        num_max = BERT_MAX_TOKENS - len_excess_new, 
+                        num_max = len_summary_max, 
                         truncate_bottom = truncate_bottom)
                     summary_tokens = [t for sublist in summary_truncated for t in sublist]
-            # now it is assured that everything fits into max input size
+            # now it is assured that everything fits into max input size:
+            assert len(sent_tokens) + len(summary_tokens) + len_sep + 2 <= BERT_MAX_TOKENS
             inputs, answers = self.get_inputs_for_sentence(sent_tokens, summary_tokens, sep)
             summary_inputs += inputs
             summary_answers += answers

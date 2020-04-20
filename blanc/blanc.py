@@ -1,6 +1,7 @@
 import copy
 import logging
 import random
+import sys
 
 logging.getLogger('transformers').setLevel(level=logging.WARNING)
 
@@ -198,7 +199,7 @@ class Blanc:
             # Cut summary+sentence to allowed input size. 2 more tokens: [CLS], [SEP]
             summary_tokens = [t for sublist in summary_sent_tokens for t in sublist]
             len_input_estimate = 2 + len(summary_tokens) + len_sep + len(sent_tokens)
-            len_excess = BERT_MAX_TOKENS - len_input_estimate
+            len_excess = len_input_estimate - BERT_MAX_TOKENS
             if len_excess > 0:
                 # Cut sentence to certain limit:
                 len_cut_sent = min(len_excess, len(sent_tokens)-self.len_sent_allow_cut)

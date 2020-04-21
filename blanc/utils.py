@@ -353,8 +353,8 @@ def truncate_list_of_lists(sents_tokenized, num_max, truncate_bottom=True):
             sents_truncated = sents_truncated[1:]
             len_truncated = len_truncated - len(sent)
     if not sents_truncated:
-        sent_use = copy.deepcopy(sents_tokenized[0]) if truncate_bottom else copy.deepcopy(sents_tokenized[-1])
-        sents_truncated = [sent_use]
+        sent_use = sents_tokenized[0] if truncate_bottom else sents_tokenized[-1]
+        sents_truncated = [copy.deepcopy(sent_use)]
         len_truncated = len(sents_truncated[0])
         # Cut by tokens - always from the top:
         if len_truncated > num_max:

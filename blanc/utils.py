@@ -343,13 +343,6 @@ def truncate_list_of_lists(sents_tokenized, num_max, truncate_bottom=True):
             sents_truncated.append(sent)
             if len_truncated == num_max:
                 break
-        if not sents_truncated:
-            sents_truncated = [copy.deepcopy(sents_tokenized[0])]
-            len_truncated = len(sents_truncated[0])
-            # Cut by tokens - always from the top:
-            if len_truncated > num_max:
-                len_remove = len_truncated - num_max
-                sents_truncated[0] = sents_truncated[0][len_remove:]
     else:
         sents_truncated = copy.deepcopy(sents_tokenized)
         len_truncated = sum([len(s) for s in sents_tokenized])
@@ -359,12 +352,13 @@ def truncate_list_of_lists(sents_tokenized, num_max, truncate_bottom=True):
                 break
             sents_truncated = sents_truncated[1:]
             len_truncated = len_truncated - len(sent)
-        if not sents_truncated:
-            sents_truncated = [copy.deepcopy(sents_tokenized[-1])]
-            len_truncated = len(sents_truncated[0])
-            # Cut by tokens - always from the top:
-            if len_truncated > num_max:
-                len_remove = len_truncated - num_max
-                sents_truncated[0] = sents_truncated[0][len_remove:]
+    if not sents_truncated:
+        sent_use = copy.deepcopy(sents_tokenized[0]) if truncate_bottom else copy.deepcopy(sents_tokenized[-1])
+        sents_truncated = [sent_use]
+        len_truncated = len(sents_truncated[0])
+        # Cut by tokens - always from the top:
+        if len_truncated > num_max:
+            len_remove = len_truncated - num_max
+            sents_truncated[0] = sents_truncated[0][len_remove:]
     assert sum([len(s) for s in sents_truncated]) <= num_max
     return sents_truncated

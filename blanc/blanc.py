@@ -34,7 +34,10 @@ from .utils import (
 
 
 class Blanc:
-    """An abstract superclass containing shared functionality between BlancHelp and BlancTune."""
+    """An abstract superclass containing shared functionality between BlancHelp and BlancTune.
+    measure ('relative' or 'improve') is a choice of how the success of inference is measured.
+        Add '-counts' to return also counts: 'relative-counts' or 'improve-counts'.
+    """
 
     def __init__(
         self,
@@ -185,12 +188,8 @@ class Blanc:
             summary = clean_text(summary)
             summary_sents = sent_tokenize(summary)
             summary_sent_tokens = [self.model_tokenizer.tokenize(sent) for sent in summary_sents]
-            #num_summary_tokens = [len(s) for s in summary_sent_tokens]
-            #len_summary = sum(num_summary_tokens)
         else:
             summary_sent_tokens = [[]]
-            #len_summary = 0
-
         len_sep = 0
         if sep:
             len_sep = len(sep)
@@ -364,7 +363,9 @@ class Blanc:
                 list represents a different input masking, and each dict maps indices to original
                 tokens.
         Returns:
-            score (float): the BLANC score
+            score (float): the BLANC score, if the measure is 'relative' or 'improve'.
+            score, S (tuple of float and list): the BLANC score and counts, 
+                if the measure is 'relative-counts' or 'improve-counts'.
         """
         base_correctness = determine_correctness(
             base_output,
@@ -379,14 +380,19 @@ class Blanc:
         for base_correct, assisted_correct in zip(base_correctness, assisted_correctness):
             S[int(base_correct)][int(assisted_correct)] += 1
 
-        if self.measure == 'relative':
-            score = measure_relative(S)
-        elif self.measure == 'improve':
-            score = measure_improve(S)
+        measure_split = self.measure.split('-')
+        if measure_split[0] == 'relative':
+            result = measure_relative(S)
+            if self.measure == 'relative-counts':
+                result = result, S
+        elif measure_split[0] == 'improve':
+            result = measure_improve(S)
+            if self.measure == 'improve-counts':
+                result = result, S
         else:
             raise NotImplementedError(f'unknown measure {self.measure}')
 
-        return score, S
+        return result
 
     def init_model(self, device):
         """Initialize the language model and send it to the given device

@@ -7,7 +7,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 # prefix used by the wordpiece tokenizer to indicate that the token continues the previous word
-WORDPIECE_PREFIX = "##"
+WORDPIECE_PREFIX = '##'
 # probability of masking a token during BERT training
 P_MASK = 0.15
 # probability of replacing a masked token with a random token
@@ -31,64 +31,58 @@ BERT_MAX_TOKENS = 512
 
 # used to represent inputs to the BERT model
 BertInput = namedtuple(
-    typename="BertInput",
-    field_names=[
-        "input_ids",
-        "attention_mask",
-        "token_type_ids",
-        "labels",
-        "masked_idxs",
-    ],
+    typename='BertInput',
+    field_names=['input_ids', 'attention_mask', 'token_type_ids', 'labels', 'masked_idxs'],
 )
 
 # all the configuration options
 Config = namedtuple(
-    "Config",
+    'Config',
     [
-        "doc_key",
-        "summary_key",
-        "summaries_key",
-        "model_name",
-        "measure",
-        "gap",
-        "min_token_length_normal",
-        "min_token_length_lead",
-        "min_token_length_followup",
-        "device",
-        "random_seed",
-        "inference_batch_size",
-        "inference_mask_evenly",
-        "len_sent_allow_cut",
-        "filler_token",
-        "help_sep",
-        "finetune_batch_size",
-        "finetune_epochs",
-        "finetune_mask_evenly",
-        "finetune_chunk_size",
-        "finetune_chunk_stride",
-        "learning_rate",
-        "warmup_steps",
+        'doc_key',
+        'summary_key',
+        'summaries_key',
+        'model_name',
+        'measure',
+        'gap',
+        'min_token_length_normal',
+        'min_token_length_lead',
+        'min_token_length_followup',
+        'device',
+        'random_seed',
+        'inference_batch_size',
+        'inference_mask_evenly',
+        'len_sent_allow_cut',
+        'filler_token',
+        'help_sep',
+        'finetune_batch_size',
+        'finetune_epochs',
+        'finetune_mask_evenly',
+        'finetune_chunk_size',
+        'finetune_chunk_stride',
+        'learning_rate',
+        'warmup_steps',
     ],
 )
 
 # the default configuration options that can reproduce the paper's results and don't require a GPU
 Defaults = Config(
-    doc_key="doc",
-    summary_key="summary",
-    summaries_key="summaries",
-    model_name="bert-base-uncased",
-    measure="relative",
+    doc_key='doc',
+    summary_key='summary',
+    summaries_key='summaries',
+    model_name='bert-base-uncased',
+    measure='relative',
     gap=6,
     min_token_length_normal=4,
     min_token_length_lead=2,
     min_token_length_followup=100,
-    device="cpu",
+    device='cpu',
     random_seed=1,
     inference_batch_size=1,
     inference_mask_evenly=True,
     len_sent_allow_cut=100,
-    filler_token=".",
-    help_sep="",
+    filler_token='.',
+    help_sep='',
     finetune_batch_size=1,
     finetune_epochs=10,
     finetune_chunk_size=64,
@@ -101,24 +95,31 @@ Defaults = Config(
 
 def batch_data(data, batch_size):
     """Given a list, batch that list into chunks of size batch_size
+
     Args:
         data (List): list to be batched
         batch_size (int): size of each batch
+
     Returns:
         batches (List[List]): a list of lists, each inner list of size batch_size except possibly
             the last one.
     """
-    batches = [data[i : i + batch_size] for i in range(0, len(data), batch_size)]
+    batches = [
+        data[i : i + batch_size]
+        for i in range(0, len(data), batch_size)
+    ]
     return batches
 
 
 def is_token_large_enough(token, next_token, min_token_lengths):
     """Determine if a token is large enough according to min_token_lengths
+
     Args:
         token (str): a wordpiece token
         next_token (str): the next wordpiece token in the sequence
         min_token_lengths (Tuple[int, int, int]): minimum token lengths for normal tokens, lead
             tokens, and followup tokens
+
     Returns:
         large_enough (bool): whether or not the token is large enough
     """
@@ -137,12 +138,14 @@ def is_token_large_enough(token, next_token, min_token_lengths):
 def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token):
     """Produce several maskings for the given tokens where each masking is created by masking every
     "gap" tokens, as long as the token is large enough according to min_token_lengths.
+
     Args:
         tokens (List[str]): a sequence of wordpiece tokens
         gap (int): the spacing in-between masked tokens
         min_token_lengths (Tuple[int, int, int]): minimum token lengths for normal tokens, lead
             tokens, and followup tokens
         mask_token (str): wordpiece token to use for masking
+
     Returns:
         masked_inputs (List[List[str]]): a list of token sequences, where each token sequence
             contains masked tokens separated by "gap" tokens.
@@ -156,7 +159,7 @@ def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token):
         masked_input = []
         answers = {}
         for idx, token in enumerate(tokens):
-            next_token = "" if idx + 1 == len(tokens) else tokens[idx + 1]
+            next_token = '' if idx + 1 == len(tokens) else tokens[idx + 1]
             large_enough = is_token_large_enough(token, next_token, min_token_lengths)
 
             if idx % gap == modulus and large_enough:
@@ -174,11 +177,13 @@ def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token):
 
 def mask_tokens_randomly(tokens, min_token_lengths, mask_token):
     """Produce several maskings for the given tokens by randomly choosing tokens to mask
+
     Args:
         tokens (List[str]): a sequence of wordpiece tokens
         min_token_lengths (Tuple[int, int, int]): minimum token lengths for normal tokens, lead
             tokens, and followup tokens
         mask_token (str): wordpiece token to use for masking
+
     Returns:
         masked_inputs (List[List[str]]): a list of token sequences, where each token sequence
             contains masked tokens chosen randomly.
@@ -189,7 +194,7 @@ def mask_tokens_randomly(tokens, min_token_lengths, mask_token):
 
     token_positions = []
     for idx, token in enumerate(tokens):
-        next_token = "" if idx + 1 == len(tokens) else tokens[idx + 1]
+        next_token = '' if idx + 1 == len(tokens) else tokens[idx + 1]
         if is_token_large_enough(token, next_token, min_token_lengths):
             token_positions.append(idx)
     random.shuffle(token_positions)
@@ -216,16 +221,22 @@ def mask_tokens_randomly(tokens, min_token_lengths, mask_token):
 def stack_tensor(input_list, pad_value, device):
     """Given a batch of inputs, stack them into a single tensor on the given device, padding them
     at the back with pad_value to make sure they are all the same length.
+
     Args:
         input_list (List[List[int]]): a list of input sequences
         pad_value (int): the value to use for padding input sequences to make them the same length
         device (str): torch device (usually "cpu" or "cuda")
+
     Returns:
         stacked_tensor (torch.LongTensor): a tensor of dimensions (batch size) x (seq length)
     """
-    tensor_list = [torch.LongTensor(inputs) for inputs in input_list]
+    tensor_list = [
+        torch.LongTensor(inputs) for inputs in input_list
+    ]
     stacked_tensor = pad_sequence(
-        sequences=tensor_list, batch_first=True, padding_value=pad_value
+        sequences=tensor_list,
+        batch_first=True,
+        padding_value=pad_value
     ).to(device)
 
     return stacked_tensor
@@ -233,10 +244,12 @@ def stack_tensor(input_list, pad_value, device):
 
 def get_input_tensors(input_batch, device, tokenizer):
     """Given a list of BertInputs, return the relevant tensors that are fed into BERT.
+
     Args:
         input_batch (List[BertInput]): a batch of model inputs
         device (str): torch device (usually "cpu" or "cuda")
         tokenizer (BertTokenizer): the wordpiece tokenizer used for BERT
+
     Returns:
         input_ids (torch.LongTensor): ids corresponding to input tokens
         attention_mask (torch.LongTensor): tells BERT about parts of the input to ignore
@@ -248,14 +261,10 @@ def get_input_tensors(input_batch, device, tokenizer):
     token_type_ids_list = [inputs.token_type_ids for inputs in input_batch]
     labels_list = [inputs.labels for inputs in input_batch]
 
-    (id_pad,) = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])
+    id_pad, = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])
     input_ids = stack_tensor(input_ids_list, pad_value=id_pad, device=device)
-    attention_mask = stack_tensor(
-        attention_mask_list, pad_value=MASK_PAD, device=device
-    )
-    token_type_ids = stack_tensor(
-        token_type_ids_list, pad_value=TOKEN_TYPE_PAD, device=device
-    )
+    attention_mask = stack_tensor(attention_mask_list, pad_value=MASK_PAD, device=device)
+    token_type_ids = stack_tensor(token_type_ids_list, pad_value=TOKEN_TYPE_PAD, device=device)
 
     if labels_list[0] is not None:
         labels = stack_tensor(labels_list, pad_value=LABEL_IGNORE, device=device)
@@ -268,11 +277,13 @@ def get_input_tensors(input_batch, device, tokenizer):
 def determine_correctness(outputs, answers):
     """Given dicts corresponding to predicted tokens and actual tokens at different indices, return
     a list of bools for whether or not those predictions were correct.
+
     Args:
         outputs (List[Dict[int, str]]): each list represents a different input masking, and each
             dict maps indices to model predictions
         answers (List[Dict[int, str]]): each list represents a different input masking, and each
             dict maps indices to original tokens
+
     Returns:
         correctness (List[bool]): a list of values that are True if the model made a correct
             prediction and False otherwise
@@ -288,8 +299,10 @@ def determine_correctness(outputs, answers):
 
 def measure_relative(S):
     """Calculate the "measure-relative" score as defined in the paper
+
     Args:
         S (List[List[int]]): accuracy counts as defined in the paper
+
     Returns:
         score (float): measure-relative score
     """
@@ -301,8 +314,10 @@ def measure_relative(S):
 
 def measure_improve(S):
     """Calculate the "measure-improve" score as defined in the paper
+
     Args:
         S (List[List[int]]): accuracy counts as defined in the paper
+
     Returns:
         score (float): measure-improve score
     """
@@ -314,12 +329,14 @@ def measure_improve(S):
 
 def clean_text(text):
     """Return a cleaned version of the input text
+
     Args:
         text (str): dirty text
+
     Returns:
         text (str): cleaned text
     """
-    text = unicodedata.normalize("NFKD", text)
+    text = unicodedata.normalize('NFKD', text)
     return text
 
 
@@ -330,12 +347,14 @@ def truncate_sentence_and_summary(
     The summary must have at least one sublist (can be empty)
     The sentence is cut by tokens from the bottom.
     The summary is cut by sentences. Last sentence is cut by tokens.
+
     Args:
         sent (List[str]): Sentence as a list of tokens
         summary (List[List[str]]): Summary as list of sentences, each sentence is list of tokens
         len_sep (int): Number of tokens in a separator used between the summary and the sentence
         len_sent_allow_cut (int): Allowed size of truncated sentence before cutting summary
         truncate_bottom (bool): Indicator how to cut the summary
+
     Returns:
         sent (List[str]): Truncated (if necessary) sentence as a list of tokens
         summary_tokens (List[str]): Truncated (if necessary) summary as a list of tokens
@@ -364,10 +383,12 @@ def truncate_list_of_lists(sents_tokenized, num_max, truncate_bottom=True):
     """Return a truncated list, with summ of tokens not exceeding maximum.
     Truncate by lists. If single left list is still too long, truncate it by tokens.
     In our context each element of sents_tokenized is a sentence represented as a list of tokens.
+
     Args:
         sents_tokenized (List[List[str]]): List, each element is a list.
         num_max (int): maximal allowed number of tokens.
         truncate_bottom (bool): truncate starting from bottom lists.
+
     Returns:
         sents_tokenized (List[str]): truncated list
     """

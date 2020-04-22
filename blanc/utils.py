@@ -1,6 +1,7 @@
 from collections import namedtuple
 import random
 import unicodedata
+import copy
 
 import torch
 from torch.nn.utils.rnn import pad_sequence
@@ -51,6 +52,7 @@ Config = namedtuple(
         'random_seed',
         'inference_batch_size',
         'inference_mask_evenly',
+        'len_sent_allow_cut',
         'filler_token',
         'help_sep',
         'finetune_batch_size',
@@ -78,6 +80,7 @@ Defaults = Config(
     random_seed=1,
     inference_batch_size=1,
     inference_mask_evenly=True,
+    len_sent_allow_cut=100,
     filler_token='.',
     help_sep='',
     finetune_batch_size=1,
@@ -303,7 +306,10 @@ def measure_relative(S):
     Returns:
         score (float): measure-relative score
     """
-    return (S[0][1] - S[1][0]) / (S[0][0] + S[1][1] + S[0][1] + S[1][0])
+    denom = S[0][0] + S[1][1] + S[0][1] + S[1][0]
+    if denom == 0:
+        return 0
+    return (S[0][1] - S[1][0]) / denom
 
 
 def measure_improve(S):
@@ -315,7 +321,10 @@ def measure_improve(S):
     Returns:
         score (float): measure-improve score
     """
-    return S[0][1] / (S[0][0] + S[1][1] + S[0][1])
+    denom = S[0][0] + S[1][1] + S[0][1]
+    if denom == 0:
+        return 0
+    return S[0][1] / denom
 
 
 def clean_text(text):
@@ -329,3 +338,92 @@ def clean_text(text):
     """
     text = unicodedata.normalize('NFKD', text)
     return text
+
+
+def truncate_sentence_and_summary(
+    sent,
+    summary,
+    len_sep=0,
+    len_sent_allow_cut=0,
+    truncate_bottom=True,
+):
+    """Cut summary+sentence to allowed input size. 2 more tokens: [CLS], [SEP]
+    The summary must have at least one sublist (can be empty)
+    The sentence is cut by tokens from the bottom.
+    The summary is cut by sentences. Last sentence is cut by tokens.
+
+    Args:
+        sent (List[str]): Sentence as a list of tokens
+        summary (List[List[str]]): Summary as list of sentences, each sentence is list of tokens
+        len_sep (int): Number of tokens in a separator used between the summary and the sentence
+        len_sent_allow_cut (int): Allowed size of truncated sentence before cutting summary
+        truncate_bottom (bool): Indicator how to cut the summary
+
+    Returns:
+        sent (List[str]): Truncated (if necessary) sentence as a list of tokens
+        summary_tokens (List[str]): Truncated (if necessary) summary as a list of tokens
+    """
+    summary_tokens = [t for sublist in summary for t in sublist]
+    len_input_estimate = 2 + len(summary_tokens) + len_sep + len(sent)
+    len_excess = len_input_estimate - BERT_MAX_TOKENS
+    if len_excess > 0:
+        len_cut_sent = min(len_excess, len(sent) - len_sent_allow_cut)
+        len_sent_new = len(sent) - len_cut_sent
+        sent = sent[:len_sent_new]
+        assert len_excess <= len_cut_sent or summary[0]
+        if len_excess > len_cut_sent:
+            len_summary_max = BERT_MAX_TOKENS - 2 - len_sep - len(sent)
+            summary_truncated = truncate_list_of_lists(
+                sents_tokenized=summary,
+                num_max=len_summary_max,
+                truncate_bottom=truncate_bottom,
+            )
+            summary_tokens = [t for sublist in summary_truncated for t in sublist]
+    assert len(sent) + len(summary_tokens) + len_sep + 2 <= BERT_MAX_TOKENS
+    return sent, summary_tokens
+
+
+def truncate_list_of_lists(sents_tokenized, num_max, truncate_bottom=True):
+    """Return a truncated list, with summ of tokens not exceeding maximum.
+    Truncate by lists. If single left list is still too long, truncate it by tokens.
+    In our context each element of sents_tokenized is a sentence represented as a list of tokens.
+
+    Args:
+        sents_tokenized (List[List[str]]): List, each element is a list.
+        num_max (int): maximal allowed number of tokens.
+        truncate_bottom (bool): truncate starting from bottom lists.
+
+    Returns:
+        sents_tokenized (List[str]): truncated list
+    """
+    sents_truncated = []
+    if truncate_bottom:
+        len_truncated = 0
+        # Cut by sentences:
+        for sent in sents_tokenized:
+            len_truncated_maybe = len_truncated + len(sent)
+            if len_truncated_maybe > num_max:
+                break
+            len_truncated = len_truncated_maybe
+            sents_truncated.append(sent)
+            if len_truncated == num_max:
+                break
+    else:
+        sents_truncated = copy.deepcopy(sents_tokenized)
+        len_truncated = sum([len(s) for s in sents_tokenized])
+        # Cut by sentences:
+        for sent in sents_tokenized:
+            if len_truncated <= num_max:
+                break
+            sents_truncated = sents_truncated[1:]
+            len_truncated = len_truncated - len(sent)
+    if not sents_truncated:
+        sent_use = sents_tokenized[0] if truncate_bottom else sents_tokenized[-1]
+        sents_truncated = [copy.deepcopy(sent_use)]
+        len_truncated = len(sents_truncated[0])
+        # Cut by tokens - always from the top:
+        if len_truncated > num_max:
+            len_remove = len_truncated - num_max
+            sents_truncated[0] = sents_truncated[0][len_remove:]
+    assert sum([len(s) for s in sents_truncated]) <= num_max
+    return sents_truncated

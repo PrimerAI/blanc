@@ -8,18 +8,15 @@ import torch
 from blanc import BlancHelp, BlancTune
 from blanc.utils import Defaults
 
+
 def main():
     parser = argparse.ArgumentParser(
-        prog='blanc',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+        prog='blanc', formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     required_parser = parser.add_argument_group('required arguments')
     required_parser.add_argument(
-        'type',
-        type=str,
-        choices=['help', 'tune'],
-        help='BLANC-help or BLANC-tune'
+        'type', type=str, choices=['help', 'tune'], help='BLANC-help or BLANC-tune'
     )
 
     input_parser = parser.add_argument_group('input arguments')
@@ -121,10 +118,7 @@ def main():
         metavar='LEN',
     )
     blanc_parser.add_argument(
-        '--device',
-        type=str,
-        help='cpu or cuda device',
-        default=Defaults.device,
+        '--device', type=str, help='cpu or cuda device', default=Defaults.device,
     )
     blanc_parser.add_argument(
         '--random_seed',

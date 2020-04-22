@@ -62,7 +62,7 @@ Config = namedtuple(
         'finetune_chunk_stride',
         'learning_rate',
         'warmup_steps',
-    ]
+    ],
 )
 
 # the default configuration options that can reproduce the paper's results and don't require a GPU
@@ -104,10 +104,7 @@ def batch_data(data, batch_size):
         batches (List[List]): a list of lists, each inner list of size batch_size except possibly
             the last one.
     """
-    batches = [
-        data[i:i + batch_size]
-        for i in range(0, len(data), batch_size)
-    ]
+    batches = [data[i : i + batch_size] for i in range(0, len(data), batch_size)]
     return batches
 
 
@@ -230,13 +227,9 @@ def stack_tensor(input_list, pad_value, device):
     Returns:
         stacked_tensor (torch.LongTensor): a tensor of dimensions (batch size) x (seq length)
     """
-    tensor_list = [
-        torch.LongTensor(inputs) for inputs in input_list
-    ]
+    tensor_list = [torch.LongTensor(inputs) for inputs in input_list]
     stacked_tensor = pad_sequence(
-        sequences=tensor_list,
-        batch_first=True,
-        padding_value=pad_value
+        sequences=tensor_list, batch_first=True, padding_value=pad_value
     ).to(device)
 
     return stacked_tensor
@@ -261,7 +254,7 @@ def get_input_tensors(input_batch, device, tokenizer):
     token_type_ids_list = [inputs.token_type_ids for inputs in input_batch]
     labels_list = [inputs.labels for inputs in input_batch]
 
-    id_pad, = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])
+    (id_pad,) = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])
     input_ids = stack_tensor(input_ids_list, pad_value=id_pad, device=device)
     attention_mask = stack_tensor(attention_mask_list, pad_value=MASK_PAD, device=device)
     token_type_ids = stack_tensor(token_type_ids_list, pad_value=TOKEN_TYPE_PAD, device=device)
@@ -341,11 +334,7 @@ def clean_text(text):
 
 
 def truncate_sentence_and_summary(
-    sent,
-    summary,
-    len_sep=0,
-    len_sent_allow_cut=0,
-    truncate_bottom=True,
+    sent, summary, len_sep=0, len_sent_allow_cut=0, truncate_bottom=True,
 ):
     """Cut summary+sentence to allowed input size. 2 more tokens: [CLS], [SEP]
     The summary must have at least one sublist (can be empty)
@@ -374,9 +363,7 @@ def truncate_sentence_and_summary(
         if len_excess > len_cut_sent:
             len_summary_max = BERT_MAX_TOKENS - 2 - len_sep - len(sent)
             summary_truncated = truncate_list_of_lists(
-                sents_tokenized=summary,
-                num_max=len_summary_max,
-                truncate_bottom=truncate_bottom,
+                sents_tokenized=summary, num_max=len_summary_max, truncate_bottom=truncate_bottom,
             )
             summary_tokens = [t for sublist in summary_truncated for t in sublist]
     assert len(sent) + len(summary_tokens) + len_sep + 2 <= BERT_MAX_TOKENS

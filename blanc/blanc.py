@@ -180,10 +180,12 @@ class Blanc:
 
     def get_inference_inputs(self, doc, summary=None, sep=None):
         """Get the inference inputs for a document, which possibly includes a summary
+
         Args:
             doc (str): an input document
             summary (str): an optional input summary
             sep (str): Separator between the inference help (summary) and a sentence from the doc
+
         Returns:
             summary_inputs (List[BertInput]): a list of BertInputs for inference
             summary_answers (List[Dict[int, str]]): each dict maps token indices back to their
@@ -226,7 +228,6 @@ class Blanc:
             inputs, answers = self.get_inputs_for_sentence(sent_tokens, summary_tokens)
             summary_inputs += inputs
             summary_answers += answers
-
         return summary_inputs, summary_answers
 
     def assemble_inference_input(self, answers, sent_tokens, help_tokens=None, help_sep=None):
@@ -662,7 +663,7 @@ class BlancTune(Blanc):
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
             num_warmup_steps=self.warmup_steps,
-            num_training_steps=len(input_batches) * self.finetune_epochs,
+            num_training_steps=len(input_batches) * self.finetune_epochs
         )
 
         for epoch in range(self.finetune_epochs):
@@ -730,7 +731,7 @@ class BlancTune(Blanc):
         model_inputs = []
         for input_ids, answers, labels in zip(all_input_ids, all_answers, all_labels):
             for original_idx, token in answers.items():
-                idx = original_idx + 1  # accounting for starting CLS token
+                idx = original_idx + 1 # accounting for starting CLS token
                 original_token_id, = self.model_tokenizer.convert_tokens_to_ids([token])
                 labels[idx] = original_token_id
 

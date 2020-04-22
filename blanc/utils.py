@@ -62,7 +62,7 @@ Config = namedtuple(
         'finetune_chunk_stride',
         'learning_rate',
         'warmup_steps',
-    ],
+    ]
 )
 
 # the default configuration options that can reproduce the paper's results and don't require a GPU
@@ -105,7 +105,7 @@ def batch_data(data, batch_size):
             the last one.
     """
     batches = [
-        data[i : i + batch_size]
+        data[i:i + batch_size]
         for i in range(0, len(data), batch_size)
     ]
     return batches
@@ -341,7 +341,11 @@ def clean_text(text):
 
 
 def truncate_sentence_and_summary(
-    sent, summary, len_sep=0, len_sent_allow_cut=0, truncate_bottom=True
+    sent,
+    summary,
+    len_sep=0,
+    len_sent_allow_cut=0,
+    truncate_bottom=True,
 ):
     """Cut summary+sentence to allowed input size. 2 more tokens: [CLS], [SEP]
     The summary must have at least one sublist (can be empty)

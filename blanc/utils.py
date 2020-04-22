@@ -7,7 +7,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 
 # prefix used by the wordpiece tokenizer to indicate that the token continues the previous word
-WORDPIECE_PREFIX = '##'
+WORDPIECE_PREFIX = "##"
 # probability of masking a token during BERT training
 P_MASK = 0.15
 # probability of replacing a masked token with a random token
@@ -31,58 +31,64 @@ BERT_MAX_TOKENS = 512
 
 # used to represent inputs to the BERT model
 BertInput = namedtuple(
-    typename='BertInput',
-    field_names=['input_ids', 'attention_mask', 'token_type_ids', 'labels', 'masked_idxs'],
+    typename="BertInput",
+    field_names=[
+        "input_ids",
+        "attention_mask",
+        "token_type_ids",
+        "labels",
+        "masked_idxs",
+    ],
 )
 
 # all the configuration options
 Config = namedtuple(
-    'Config',
+    "Config",
     [
-        'doc_key',
-        'summary_key',
-        'summaries_key',
-        'model_name',
-        'measure',
-        'gap',
-        'min_token_length_normal',
-        'min_token_length_lead',
-        'min_token_length_followup',
-        'device',
-        'random_seed',
-        'inference_batch_size',
-        'inference_mask_evenly',
-        'len_sent_allow_cut',
-        'filler_token',
-        'help_sep',
-        'finetune_batch_size',
-        'finetune_epochs',
-        'finetune_mask_evenly',
-        'finetune_chunk_size',
-        'finetune_chunk_stride',
-        'learning_rate',
-        'warmup_steps',
-    ]
+        "doc_key",
+        "summary_key",
+        "summaries_key",
+        "model_name",
+        "measure",
+        "gap",
+        "min_token_length_normal",
+        "min_token_length_lead",
+        "min_token_length_followup",
+        "device",
+        "random_seed",
+        "inference_batch_size",
+        "inference_mask_evenly",
+        "len_sent_allow_cut",
+        "filler_token",
+        "help_sep",
+        "finetune_batch_size",
+        "finetune_epochs",
+        "finetune_mask_evenly",
+        "finetune_chunk_size",
+        "finetune_chunk_stride",
+        "learning_rate",
+        "warmup_steps",
+    ],
 )
 
 # the default configuration options that can reproduce the paper's results and don't require a GPU
 Defaults = Config(
-    doc_key='doc',
-    summary_key='summary',
-    summaries_key='summaries',
-    model_name='bert-base-uncased',
-    measure='relative',
+    doc_key="doc",
+    summary_key="summary",
+    summaries_key="summaries",
+    model_name="bert-base-uncased",
+    measure="relative",
     gap=6,
     min_token_length_normal=4,
     min_token_length_lead=2,
     min_token_length_followup=100,
-    device='cpu',
+    device="cpu",
     random_seed=1,
     inference_batch_size=1,
     inference_mask_evenly=True,
     len_sent_allow_cut=100,
-    filler_token='.',
-    help_sep='',
+    filler_token=".",
+    help_sep="",
     finetune_batch_size=1,
     finetune_epochs=10,
     finetune_chunk_size=64,
@@ -102,10 +108,7 @@ def batch_data(data, batch_size):
         batches (List[List]): a list of lists, each inner list of size batch_size except possibly
             the last one.
     """
-    batches = [
-        data[i:i + batch_size]
-        for i in range(0, len(data), batch_size)
-    ]
+    batches = [data[i : i + batch_size] for i in range(0, len(data), batch_size)]
     return batches
 
 
@@ -153,7 +156,7 @@ def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token):
         masked_input = []
         answers = {}
         for idx, token in enumerate(tokens):
-            next_token = '' if idx + 1 == len(tokens) else tokens[idx + 1]
+            next_token = "" if idx + 1 == len(tokens) else tokens[idx + 1]
             large_enough = is_token_large_enough(token, next_token, min_token_lengths)
 
             if idx % gap == modulus and large_enough:
@@ -186,7 +189,7 @@ def mask_tokens_randomly(tokens, min_token_lengths, mask_token):
 
     token_positions = []
     for idx, token in enumerate(tokens):
-        next_token = '' if idx + 1 == len(tokens) else tokens[idx + 1]
+        next_token = "" if idx + 1 == len(tokens) else tokens[idx + 1]
         if is_token_large_enough(token, next_token, min_token_lengths):
             token_positions.append(idx)
     random.shuffle(token_positions)
@@ -220,13 +223,9 @@ def stack_tensor(input_list, pad_value, device):
     Returns:
         stacked_tensor (torch.LongTensor): a tensor of dimensions (batch size) x (seq length)
     """
-    tensor_list = [
-        torch.LongTensor(inputs) for inputs in input_list
-    ]
+    tensor_list = [torch.LongTensor(inputs) for inputs in input_list]
     stacked_tensor = pad_sequence(
-        sequences=tensor_list,
-        batch_first=True,
-        padding_value=pad_value
+        sequences=tensor_list, batch_first=True, padding_value=pad_value
     ).to(device)
 
     return stacked_tensor
@@ -249,10 +248,14 @@ def get_input_tensors(input_batch, device, tokenizer):
     token_type_ids_list = [inputs.token_type_ids for inputs in input_batch]
     labels_list = [inputs.labels for inputs in input_batch]
 
-    id_pad, = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])
+    (id_pad,) = tokenizer.convert_tokens_to_ids([tokenizer.pad_token])
     input_ids = stack_tensor(input_ids_list, pad_value=id_pad, device=device)
-    attention_mask = stack_tensor(attention_mask_list, pad_value=MASK_PAD, device=device)
-    token_type_ids = stack_tensor(token_type_ids_list, pad_value=TOKEN_TYPE_PAD, device=device)
+    attention_mask = stack_tensor(
+        attention_mask_list, pad_value=MASK_PAD, device=device
+    )
+    token_type_ids = stack_tensor(
+        token_type_ids_list, pad_value=TOKEN_TYPE_PAD, device=device
+    )
 
     if labels_list[0] is not None:
         labels = stack_tensor(labels_list, pad_value=LABEL_IGNORE, device=device)
@@ -316,8 +319,45 @@ def clean_text(text):
     Returns:
         text (str): cleaned text
     """
-    text = unicodedata.normalize('NFKD', text)
+    text = unicodedata.normalize("NFKD", text)
     return text
+
+
+def truncate_sentence_and_summary(
+    sent, summary, len_sep=0, len_sent_allow_cut=0, truncate_bottom=True
+):
+    """Cut summary+sentence to allowed input size. 2 more tokens: [CLS], [SEP]
+    The summary must have at least one sublist (can be empty)
+    The sentence is cut by tokens from the bottom.
+    The summary is cut by sentences. Last sentence is cut by tokens.
+    Args:
+        sent (List[str]): Sentence as a list of tokens
+        summary (List[List[str]]): Summary as list of sentences, each sentence is list of tokens
+        len_sep (int): Number of tokens in a separator used between the summary and the sentence
+        len_sent_allow_cut (int): Allowed size of truncated sentence before cutting summary
+        truncate_bottom (bool): Indicator how to cut the summary
+    Returns:
+        sent (List[str]): Truncated (if necessary) sentence as a list of tokens
+        summary_tokens (List[str]): Truncated (if necessary) summary as a list of tokens
+    """
+    summary_tokens = [t for sublist in summary for t in sublist]
+    len_input_estimate = 2 + len(summary_tokens) + len_sep + len(sent)
+    len_excess = len_input_estimate - BERT_MAX_TOKENS
+    if len_excess > 0:
+        len_cut_sent = min(len_excess, len(sent) - len_sent_allow_cut)
+        len_sent_new = len(sent) - len_cut_sent
+        sent = sent[:len_sent_new]
+        assert len_excess <= len_cut_sent or summary[0]
+        if len_excess > len_cut_sent:
+            len_summary_max = BERT_MAX_TOKENS - 2 - len_sep - len(sent)
+            summary_truncated = truncate_list_of_lists(
+                sents_tokenized=summary,
+                num_max=len_summary_max,
+                truncate_bottom=truncate_bottom,
+            )
+            summary_tokens = [t for sublist in summary_truncated for t in sublist]
+    assert len(sent) + len(summary_tokens) + len_sep + 2 <= BERT_MAX_TOKENS
+    return sent, summary_tokens
 
 
 def truncate_list_of_lists(sents_tokenized, num_max, truncate_bottom=True):
@@ -325,11 +365,11 @@ def truncate_list_of_lists(sents_tokenized, num_max, truncate_bottom=True):
     Truncate by lists. If single left list is still too long, truncate it by tokens.
     In our context each element of sents_tokenized is a sentence represented as a list of tokens.
     Args:
-        sents_tokenized: List, each element is a list.
+        sents_tokenized (List[List[str]]): List, each element is a list.
         num_max (int): maximal allowed number of tokens.
-        truncate_bottom (Boolean): truncate starting from bottom lists.
+        truncate_bottom (bool): truncate starting from bottom lists.
     Returns:
-        sents_tokenized (list): truncated list
+        sents_tokenized (List[str]): truncated list
     """
     sents_truncated = []
     if truncate_bottom:

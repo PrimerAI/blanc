@@ -1,15 +1,19 @@
 import copy
 import logging
 import random
-import sys
 
-logging.getLogger('transformers').setLevel(level=logging.WARNING)
+logging.getLogger("transformers").setLevel(level=logging.WARNING)
 
 from nltk.tokenize import sent_tokenize
 import torch
 from torch.nn.utils.rnn import pad_sequence
 import tqdm
-from transformers import BertForMaskedLM, BertTokenizer, AdamW, get_linear_schedule_with_warmup
+from transformers import (
+    BertForMaskedLM,
+    BertTokenizer,
+    AdamW,
+    get_linear_schedule_with_warmup,
+)
 
 from .utils import (
     BertInput,
@@ -23,6 +27,7 @@ from .utils import (
     measure_improve,
     clean_text,
     truncate_list_of_lists,
+    truncate_sentence_and_summary,
     NOT_MASKED,
     TOKEN_TYPE_A,
     LABEL_IGNORE,
@@ -50,7 +55,7 @@ class Blanc:
         device=Defaults.device,
         inference_batch_size=Defaults.inference_batch_size,
         inference_mask_evenly=Defaults.inference_mask_evenly,
-        len_sent_allow_cut=Defaults.len_sent_allow_cut
+        len_sent_allow_cut=Defaults.len_sent_allow_cut,
     ):
         """This class should not be instantiated directly: instead use BlancHelp or BlancTune"""
         self.model_name = model_name
@@ -74,8 +79,8 @@ class Blanc:
         Returns:
             score (float): The BLANC score for the input
         """
-        doc_score, = self.eval_summaries_for_docs([doc], [[summary]])
-        score, = doc_score
+        (doc_score,) = self.eval_summaries_for_docs([doc], [[summary]])
+        (score,) = doc_score
         return score
 
     def eval_pairs(self, docs, summaries):
@@ -102,7 +107,7 @@ class Blanc:
         """
         raise NotImplementedError()
 
-    def get_inputs_for_sentence(self, sent_tokens, summary_tokens, sep):
+    def get_inputs_for_sentence(self, sent_tokens, summary_tokens):
         """Used by subclasses to specify inference inputs corresponding to a sentence
         Args:
             sent_tokens (List[str]): list of tokens corresponding to sentence
@@ -137,7 +142,9 @@ class Blanc:
         for doc, summaries in zip(docs, doc_summaries):
             doc_inputs, doc_answers = [], []
             for summary in summaries:
-                summary_inputs, summary_answers = self.get_inference_inputs(doc, summary, sep)
+                summary_inputs, summary_answers = self.get_inference_inputs(
+                    doc, summary, sep
+                )
                 doc_inputs.append(summary_inputs)
                 doc_answers.append(summary_answers)
             all_inputs.append(doc_inputs)
@@ -151,9 +158,7 @@ class Blanc:
         batched_inputs = batch_data(collapsed_inputs, self.inference_batch_size)
 
         iterator = tqdm.tqdm(batched_inputs, disable=not loading_bar)
-        batched_outputs = [
-            self.run_inference_batch(model, batch) for batch in iterator
-        ]
+        batched_outputs = [self.run_inference_batch(model, batch) for batch in iterator]
         collapsed_outputs = sum(batched_outputs, [])
 
         # Regroup outputs
@@ -162,12 +167,11 @@ class Blanc:
         for inputs_per_summary in inputs_per_summary_per_doc:
             doc_outputs = []
             for num_inputs in inputs_per_summary:
-                doc_outputs.append(collapsed_outputs[i:i + num_inputs])
+                doc_outputs.append(collapsed_outputs[i : i + num_inputs])
                 i += num_inputs
             all_outputs.append(doc_outputs)
 
         return all_outputs, all_answers
-
 
     def get_inference_inputs(self, doc, summary=None, sep=None):
         """Get the inference inputs for a document, which possibly includes a summary
@@ -184,53 +188,41 @@ class Blanc:
         doc_sents = sent_tokenize(doc)
         doc_sent_tokens = [self.model_tokenizer.tokenize(sent) for sent in doc_sents]
 
-        if summary is not None:
+        if summary:
             summary = clean_text(summary)
             summary_sents = sent_tokenize(summary)
-            summary_sent_tokens = [self.model_tokenizer.tokenize(sent) for sent in summary_sents]
-        else:
+            summary_sent_tokens = [
+                self.model_tokenizer.tokenize(sent) for sent in summary_sents
+            ]
+        if not summary_sent_tokens:
             summary_sent_tokens = [[]]
         len_sep = 0
         if sep:
             len_sep = len(sep)
         summary_inputs, summary_answers = [], []
         half_num_sents = len(doc_sent_tokens)
+        truncate_bottom = True
         for i_sent, sent_tokens in enumerate(doc_sent_tokens):
-            # Cut summary+sentence to allowed input size. 2 more tokens: [CLS], [SEP]
-            summary_tokens = [t for sublist in summary_sent_tokens for t in sublist]
-            len_input_estimate = 2 + len(summary_tokens) + len_sep + len(sent_tokens)
-            len_excess = len_input_estimate - BERT_MAX_TOKENS
-            if len_excess > 0:
-                # Cut sentence to certain limit:
-                len_cut_sent = min(len_excess, len(sent_tokens)-self.len_sent_allow_cut)
-                len_sent_new = len(sent_tokens) - len_cut_sent
-                sent_tokens = sent_tokens[:len_sent_new]
-                len_excess_new = len_excess - len_cut_sent
-                # If not enough, cut summary too:
-                assert len_excess_new <= 0 or (summary_sent_tokens and summary_sent_tokens[0])
-                if len_excess_new > 0:
-                    truncate_bottom = True
-                    if i_sent > half_num_sents:
-                        truncate_bottom = False
-                    len_summary_max = BERT_MAX_TOKENS - 2 - len_sep - len(sent_tokens)
-                    summary_truncated = truncate_list_of_lists(
-                        sents_tokenized = summary_sent_tokens, 
-                        num_max = len_summary_max, 
-                        truncate_bottom = truncate_bottom)
-                    summary_tokens = [t for sublist in summary_truncated for t in sublist]
-            # now it is assured that everything fits into max input size:
-            assert len(sent_tokens) + len(summary_tokens) + len_sep + 2 <= BERT_MAX_TOKENS
-            inputs, answers = self.get_inputs_for_sentence(sent_tokens, summary_tokens, sep)
+            if i_sent > half_num_sents:
+                truncate_bottom = False
+            sent_tokens, summary_tokens = truncate_sentence_and_summary(
+                sent=sent_tokens,
+                summary=summary_sent_tokens,
+                len_sep=len_sep,
+                len_sent_allow_cut=self.len_sent_allow_cut,
+                truncate_bottom=truncate_bottom,
+            )
+            # now it is assured that everything fits into the allowed input size:
+            assert (
+                len(sent_tokens) + len(summary_tokens) + len_sep + 2 <= BERT_MAX_TOKENS
+            )
+            inputs, answers = self.get_inputs_for_sentence(sent_tokens, summary_tokens)
             summary_inputs += inputs
             summary_answers += answers
         return summary_inputs, summary_answers
 
     def assemble_inference_input(
-        self,
-        answers,
-        sent_tokens,
-        help_tokens=None,
-        help_sep=None,
+        self, answers, sent_tokens, help_tokens=None, help_sep=None,
     ):
         """Given input tokens, assemble them into the tensors used by the model for inference
         Args:
@@ -287,13 +279,11 @@ class Blanc:
                 the inputs
         """
         input_ids, attention_mask, token_type_ids, _ = get_input_tensors(
-            batch,
-            device=self.device,
-            tokenizer=self.model_tokenizer,
+            batch, device=self.device, tokenizer=self.model_tokenizer,
         )
 
         with torch.no_grad():
-            model_output_batch, = model(
+            (model_output_batch,) = model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 token_type_ids=token_type_ids,
@@ -304,7 +294,9 @@ class Blanc:
             predictions = {}
             for idx in model_input.masked_idxs:
                 predicted_id = model_output[idx].argmax()
-                predicted_token, = self.model_tokenizer.convert_ids_to_tokens([predicted_id])
+                (predicted_token,) = self.model_tokenizer.convert_ids_to_tokens(
+                    [predicted_id]
+                )
                 predictions[idx] = predicted_token
             all_predictions.append(predictions)
 
@@ -346,7 +338,9 @@ class Blanc:
                 mask_token=self.model_tokenizer.mask_token,
             )
 
-    def judge_output(self, base_output, assisted_output, base_answers, assisted_answers):
+    def judge_output(
+        self, base_output, assisted_output, base_answers, assisted_answers
+    ):
         """Given a model's predicted tokens with and without assistance, as well as the correct
         token predictions, produce the BLANC score
         Args:
@@ -367,30 +361,26 @@ class Blanc:
             score, S (tuple of float and list): the BLANC score and counts, 
                 if the measure is 'relative-counts' or 'improve-counts'.
         """
-        base_correctness = determine_correctness(
-            base_output,
-            base_answers,
-        )
-        assisted_correctness = determine_correctness(
-            assisted_output,
-            assisted_answers,
-        )
+        base_correctness = determine_correctness(base_output, base_answers,)
+        assisted_correctness = determine_correctness(assisted_output, assisted_answers,)
 
         S = [[0, 0], [0, 0]]
-        for base_correct, assisted_correct in zip(base_correctness, assisted_correctness):
+        for base_correct, assisted_correct in zip(
+            base_correctness, assisted_correctness
+        ):
             S[int(base_correct)][int(assisted_correct)] += 1
 
-        measure_split = self.measure.split('-')
-        if measure_split[0] == 'relative':
+        measure_split = self.measure.split("-")
+        if measure_split[0] == "relative":
             result = measure_relative(S)
-            if self.measure == 'relative-counts':
+            if self.measure == "relative-counts":
                 result = result, S
-        elif measure_split[0] == 'improve':
+        elif measure_split[0] == "improve":
             result = measure_improve(S)
-            if self.measure == 'improve-counts':
+            if self.measure == "improve-counts":
                 result = result, S
         else:
-            raise NotImplementedError(f'unknown measure {self.measure}')
+            raise NotImplementedError(f"unknown measure {self.measure}")
 
         return result
 
@@ -448,29 +438,42 @@ class BlancHelp(Blanc):
         See documentation in superclass.
         """
         all_outputs, all_answers = self.mask_and_infer(
-            self.model, docs, doc_summaries, sep=self.help_sep)
+            self.model, docs, doc_summaries, sep=self.help_sep
+        )
 
         all_scores = []
         for doc_outputs, doc_answers in zip(all_outputs, all_answers):
             doc_scores = []
             for summary_output, summary_answers in zip(doc_outputs, doc_answers):
-                help_output = [out for i, out in enumerate(summary_output) if i % 2 == 0]
-                filler_output = [out for i, out in enumerate(summary_output) if i % 2 == 1]
-                help_answers = [answer for i, answer in enumerate(summary_answers) if i % 2 == 0]
-                filler_answers = [answer for i, answer in enumerate(summary_answers) if i % 2 == 1]
+                help_output = [
+                    out for i, out in enumerate(summary_output) if i % 2 == 0
+                ]
+                filler_output = [
+                    out for i, out in enumerate(summary_output) if i % 2 == 1
+                ]
+                help_answers = [
+                    answer for i, answer in enumerate(summary_answers) if i % 2 == 0
+                ]
+                filler_answers = [
+                    answer for i, answer in enumerate(summary_answers) if i % 2 == 1
+                ]
 
-                score = self.judge_output(filler_output, help_output, filler_answers, help_answers)
+                score = self.judge_output(
+                    filler_output, help_output, filler_answers, help_answers
+                )
                 doc_scores.append(score)
             all_scores.append(doc_scores)
 
         return all_scores
 
-    def get_inputs_for_sentence(self, sent_tokens, summary_tokens, sep):
+    def get_inputs_for_sentence(self, sent_tokens, summary_tokens):
         """Get inference inputs corresponding to a given sentence. For BLANC-help, we get several
         maskings for each sentence, and for each of these maskings we have an input with the
         summary prepended, and an input with a filler prepended. See documentation in superclass.
         """
-        sent_maskings, init_answers = self.mask_input_tokens(sent_tokens, is_finetune=False)
+        sent_maskings, init_answers = self.mask_input_tokens(
+            sent_tokens, is_finetune=False
+        )
 
         filler_tokens = [self.filler_token] * len(summary_tokens)
         inputs, final_answers = [], []
@@ -480,13 +483,15 @@ class BlancHelp(Blanc):
                 answers=init_answer,
                 sent_tokens=sent_masking,
                 help_tokens=summary_tokens,
-                help_sep=self.help_sep)
+                help_sep=self.help_sep,
+            )
 
             filler_input, filler_answers = self.assemble_inference_input(
                 answers=init_answer,
                 sent_tokens=sent_masking,
                 help_tokens=filler_tokens,
-                help_sep=self.help_sep)
+                help_sep=self.help_sep,
+            )
 
             inputs += [help_input, filler_input]
             final_answers += [help_answers, filler_answers]
@@ -545,10 +550,12 @@ class BlancTune(Blanc):
         """Calculate the BLANC score for multiple docs, each with multiple summaries.
         See documentation in superclass.
         """
-        base_outputs, base_answers = self.mask_and_infer(self.base_model, docs, doc_summaries)
+        base_outputs, base_answers = self.mask_and_infer(
+            self.base_model, docs, doc_summaries
+        )
 
         finetuned_outputs, finetuned_answers = [], []
-        model_cpu = self.init_model(device='cpu')
+        model_cpu = self.init_model(device="cpu")
         for doc, summaries in tqdm.tqdm(zip(docs, doc_summaries), total=len(docs)):
             finetuned_doc_outputs, finetuned_doc_answers = [], []
             for summary in summaries:
@@ -556,11 +563,11 @@ class BlancTune(Blanc):
                 finetuned_model = model_copy.to(self.device)
                 self.finetune(finetuned_model, summary)
 
-                (finetuned_summary_output, ), (finetuned_summary_answer, ) = self.mask_and_infer(
-                    finetuned_model,
-                    [doc],
-                    [[summary]],
-                    loading_bar=False
+                (
+                    (finetuned_summary_output,),
+                    (finetuned_summary_answer,),
+                ) = self.mask_and_infer(
+                    finetuned_model, [doc], [[summary]], loading_bar=False
                 )
                 finetuned_doc_outputs += finetuned_summary_output
                 finetuned_doc_answers += finetuned_summary_answer
@@ -578,43 +585,45 @@ class BlancTune(Blanc):
                     finetuned_summary_output,
                     base_summary_answers,
                     finetuned_summary_answers,
-                ) for (
+                )
+                for (
                     base_summary_output,
                     base_summary_answers,
                     finetuned_summary_output,
-                    finetuned_summary_answers
+                    finetuned_summary_answers,
                 ) in zip(
                     base_doc_output,
                     base_doc_answers,
                     finetuned_doc_output,
                     finetuned_doc_answers,
                 )
-            ] for (
+            ]
+            for (
                 base_doc_output,
                 base_doc_answers,
                 finetuned_doc_output,
                 finetuned_doc_answers,
             ) in zip(
-                base_outputs,
-                base_answers,
-                finetuned_outputs,
-                finetuned_answers,
+                base_outputs, base_answers, finetuned_outputs, finetuned_answers,
             )
         ]
 
         return all_scores
 
-    def get_inputs_for_sentence(self, sent_tokens, summary_tokens, sep):
+    def get_inputs_for_sentence(self, sent_tokens, summary_tokens):
         """Get inference inputs corresponding to a given sentence. For BLANC-tune, we get several
         maskings for each sentence, and each masking is a single input. See documentation in
         superclass.
         """
-        sent_maskings, init_answers = self.mask_input_tokens(sent_tokens, is_finetune=False)
+        sent_maskings, init_answers = self.mask_input_tokens(
+            sent_tokens, is_finetune=False
+        )
         inputs, final_answers = [], []
-        for sent_idx, (sent_masking, init_answer) in enumerate(zip(sent_maskings, init_answers)):
+        for sent_idx, (sent_masking, init_answer) in enumerate(
+            zip(sent_maskings, init_answers)
+        ):
             input_, answers = self.assemble_inference_input(
-                answers=init_answer,
-                sent_tokens=sent_masking,
+                answers=init_answer, sent_tokens=sent_masking,
             )
 
             inputs.append(input_)
@@ -637,13 +646,17 @@ class BlancTune(Blanc):
         optimizer_grouped_parameters = [
             {
                 "params": [
-                    p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay)
+                    p
+                    for n, p in model.named_parameters()
+                    if not any(nd in n for nd in no_decay)
                 ],
                 "weight_decay": 1e-2,
             },
             {
                 "params": [
-                    p for n, p in model.named_parameters() if any(nd in n for nd in no_decay)
+                    p
+                    for n, p in model.named_parameters()
+                    if any(nd in n for nd in no_decay)
                 ],
                 "weight_decay": 0.0,
             },
@@ -652,15 +665,13 @@ class BlancTune(Blanc):
         scheduler = get_linear_schedule_with_warmup(
             optimizer,
             num_warmup_steps=self.warmup_steps,
-            num_training_steps=len(input_batches) * self.finetune_epochs
+            num_training_steps=len(input_batches) * self.finetune_epochs,
         )
 
         for epoch in range(self.finetune_epochs):
             for input_batch in input_batches:
                 input_ids, attention_mask, token_type_ids, labels = get_input_tensors(
-                    input_batch,
-                    device=self.device,
-                    tokenizer=self.model_tokenizer,
+                    input_batch, device=self.device, tokenizer=self.model_tokenizer,
                 )
 
                 model.zero_grad()
@@ -700,24 +711,27 @@ class BlancTune(Blanc):
             model_inputs (List[BertInput]): BertInputs corresponding to different maskings of
                 chunk_tokens
         """
-        all_input_tokens, all_answers = self.mask_input_tokens(chunk_tokens, is_finetune=True)
+        all_input_tokens, all_answers = self.mask_input_tokens(
+            chunk_tokens, is_finetune=True
+        )
 
         all_input_tokens = [
             [self.model_tokenizer.cls_token] + tokens + [self.model_tokenizer.sep_token]
             for tokens in all_input_tokens
         ]
         all_input_ids = [
-            self.model_tokenizer.convert_tokens_to_ids(tokens) for tokens in all_input_tokens
+            self.model_tokenizer.convert_tokens_to_ids(tokens)
+            for tokens in all_input_tokens
         ]
-        all_labels = [
-            [LABEL_IGNORE] * len(tokens) for tokens in all_input_tokens
-        ]
+        all_labels = [[LABEL_IGNORE] * len(tokens) for tokens in all_input_tokens]
 
         model_inputs = []
         for input_ids, answers, labels in zip(all_input_ids, all_answers, all_labels):
             for original_idx, token in answers.items():
-                idx = original_idx + 1 # accounting for starting CLS token
-                original_token_id, = self.model_tokenizer.convert_tokens_to_ids([token])
+                idx = original_idx + 1  # accounting for starting CLS token
+                (original_token_id,) = self.model_tokenizer.convert_tokens_to_ids(
+                    [token]
+                )
                 labels[idx] = original_token_id
 
                 random_number = random.random()

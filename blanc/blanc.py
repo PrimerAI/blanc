@@ -193,6 +193,7 @@ class Blanc:
         doc_sents = sent_tokenize(doc)
         doc_sent_tokens = [self.model_tokenizer.tokenize(sent) for sent in doc_sents]
 
+        summary_sent_tokens = None
         if summary:
             summary = clean_text(summary)
             summary_sents = sent_tokenize(summary)

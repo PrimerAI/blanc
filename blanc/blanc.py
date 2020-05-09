@@ -6,7 +6,6 @@ logging.getLogger('transformers').setLevel(level=logging.WARNING)
 
 from nltk.tokenize import sent_tokenize
 import torch
-from torch.nn.utils.rnn import pad_sequence
 import tqdm
 from transformers import BertForMaskedLM, BertTokenizer, AdamW, get_linear_schedule_with_warmup
 

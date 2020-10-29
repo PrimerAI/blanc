@@ -65,14 +65,15 @@ Config = namedtuple(
     ],
 )
 
-# the default configuration options that can reproduce the paper's results and don't require a GPU
+# the default configuration options that don't require a GPU
+# We found gap=2 to work the best. To reproduce the original paper results use gap=6 
 Defaults = Config(
     doc_key='doc',
     summary_key='summary',
     summaries_key='summaries',
     model_name='bert-base-uncased',
     measure='relative',
-    gap=6,
+    gap=2,
     min_token_length_normal=4,
     min_token_length_lead=2,
     min_token_length_followup=100,

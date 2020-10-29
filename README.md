@@ -3,7 +3,7 @@ This is the reference implementation of BLANC-help and BLANC-tune as defined in 
 
 BLANC is a new approach to the automatic estimation of document summary quality. Our goal is to measure the functional performance of a summary with an objective, reproducible, and fully automated method. Our approach achieves this by measuring the performance boost gained by a pre-trained language model with access to a document summary while carrying out its language understanding task on the document's text. We present evidence that BLANC scores have at least as good correlation with human evaluations as do the ROUGE family of summary quality measurements. And unlike ROUGE, the BLANC method does not require human-written reference summaries, allowing for fully human-free summary quality estimation.
 
-Two types of BLANC scores are introduced in the paper and available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases.
+Two types of BLANC scores are introduced in the paper and available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases. We found that BLANC with gap=2 on average works the best [Sensitivity of BLANC to human-scored qualities of text summaries](https://arxiv.org/abs/2010.06716), it is now set as default. The original paper used gap=6. 
 
 ## Setup
 1. Install Python 3.6 or higher
@@ -20,9 +20,9 @@ Basic usage:
 >>> blanc_help = BlancHelp()
 >>> blanc_tune = BlancTune()
 >>> blanc_help.eval_once(document, summary)
-0.1111111111111111
->>> blanc_tune.eval_once(document, summary)
 0.2222222222222222
+>>> blanc_tune.eval_once(document, summary)
+0.3333333333333333
 ```
 
 By default, BLANC is run on the CPU. Using CUDA with batching is much faster:
@@ -37,30 +37,30 @@ If you want to compute the BLANC scores of many documents and summaries at once,
 >>> documents = ["Jack drove his minivan to the bazaar to purchase milk and honey for his large family.", "As Jill started taking a walk in the park, she certainly noticed that the trees were extra green this year."]
 >>> summaries = ["Jack bought milk and honey.", "Jill saw green trees in the park."]
 >>> blanc_help.eval_pairs(documents, summaries)
-[0.1111111111111111, 0.07142857142857142]
+[0.2222222222222222, 0.0]
 ```
 
 `eval_summaries_for_docs()` is useful when you have many documents, each with many summaries:
 ```python
 >>> doc_summaries = [["Jack bought milk and honey.", "Jack drove to the bazaar in a minivan"], ["Jill saw green trees in the park.", "The trees were green."]]
 >>> blanc_tune.eval_summaries_for_docs(documents, doc_summaries)
-[[0.2222222222222222, 0.2222222222222222], [0.14285714285714285, 0.07142857142857142]]
+[[0.2222222222222222, 0.2222222222222222], [-0.07142857142857142, -0.14285714285714285]]
 ```
 
 ## CLI Usage
 A CLI for computing BLANC scores is provided for convenience.
 ```
-$ blanc help --doc "Jack drove his minivan to the bazaar to purchase milk and honey for his large family." --summary "Jack bought milk and honey."
+$ blanc help --gap 6 --doc "Jack drove his minivan to the bazaar to purchase milk and honey for his large family." --summary "Jack bought milk and honey."
 0.1111111111111111
 ```
 
 Input data can also be provided in JSON format, with sample JSON input provided in `data/`
 ```
-$ blanc help --single_json data/single.json
+$ blanc help --single_json data/single.json --gap 6
 0.1111111111111111
-$ blanc tune --pairs_json data/pairs.json
+$ blanc tune --pairs_json data/pairs.json --gap 6
 [0.2222222222222222, 0.14285714285714285]
-$ blanc tune --doc_summaries_json data/doc-summaries.json
+$ blanc tune --doc_summaries_json data/doc-summaries.json --gap 6
 [[0.2222222222222222, 0.2222222222222222], [0.14285714285714285, 0.07142857142857142]]
 ```
 
@@ -95,7 +95,7 @@ arguments for BLANC-help and BLANC-tune:
                         measure improve or relative, as defined in the paper
                         (default: relative)
   --gap GAP             distance between words to mask during inference
-                        (default: 6)
+                        (default: 2)
   --min_token_length_normal LEN
                         minimum number of chars in normal tokens to mask,
                         where a normal token is a whole word (default: 4)

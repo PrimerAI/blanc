@@ -45,6 +45,7 @@ Config = namedtuple(
         'model_name',
         'measure',
         'gap',
+        'gap_mask',
         'min_token_length_normal',
         'min_token_length_lead',
         'min_token_length_followup',
@@ -74,6 +75,7 @@ Defaults = Config(
     model_name='bert-base-uncased',
     measure='relative',
     gap=2,
+    gap_mask=1,
     min_token_length_normal=4,
     min_token_length_lead=2,
     min_token_length_followup=100,
@@ -133,7 +135,7 @@ def is_token_large_enough(token, next_token, min_token_lengths):
         return token_size >= min_normal
 
 
-def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token):
+def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token, gap_mask=1):
     """Produce several maskings for the given tokens where each masking is created by masking every
     "gap" tokens, as long as the token is large enough according to min_token_lengths.
 
@@ -160,7 +162,12 @@ def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token):
             next_token = '' if idx + 1 == len(tokens) else tokens[idx + 1]
             large_enough = is_token_large_enough(token, next_token, min_token_lengths)
 
-            if idx % gap == modulus and large_enough:
+            idx_off = idx % gap
+            if modulus + gap_mask >= gap:
+                can_mask = idx_off >= modulus or idx_off < (modulus + gap_mask)%gap
+            else:
+                can_mask = idx_off >= modulus and idx_off < modulus + gap_mask
+            if can_mask and large_enough:
                 masked_input.append(mask_token)
                 answers[idx] = token
             else:

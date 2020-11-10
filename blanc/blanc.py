@@ -6,6 +6,7 @@ logging.getLogger('transformers').setLevel(level=logging.WARNING)
 
 from nltk.tokenize import sent_tokenize
 import torch
+from torch.nn.utils.rnn import pad_sequence
 import tqdm
 from transformers import BertForMaskedLM, BertTokenizer, AdamW, get_linear_schedule_with_warmup
 
@@ -43,6 +44,7 @@ class Blanc:
         model_name=Defaults.model_name,
         measure=Defaults.measure,
         gap=Defaults.gap,
+        gap_mask=Defaults.gap_mask,
         min_token_length_normal=Defaults.min_token_length_normal,
         min_token_length_lead=Defaults.min_token_length_lead,
         min_token_length_followup=Defaults.min_token_length_followup,
@@ -55,6 +57,7 @@ class Blanc:
         self.model_name = model_name
         self.measure = measure
         self.gap = gap
+        self.gap_mask = gap_mask
         self.min_token_length_normal = min_token_length_normal
         self.min_token_length_lead = min_token_length_lead
         self.min_token_length_followup = min_token_length_followup
@@ -333,6 +336,7 @@ class Blanc:
             return mask_tokens_evenly(
                 tokens=tokens,
                 gap=self.gap,
+                gap_mask=self.gap_mask,
                 min_token_lengths=min_token_lengths,
                 mask_token=self.model_tokenizer.mask_token,
             )
@@ -409,6 +413,7 @@ class BlancHelp(Blanc):
         model_name=Defaults.model_name,
         measure=Defaults.measure,
         gap=Defaults.gap,
+        gap_mask=Defaults.gap_mask,
         min_token_length_normal=Defaults.min_token_length_normal,
         min_token_length_lead=Defaults.min_token_length_lead,
         min_token_length_followup=Defaults.min_token_length_followup,
@@ -424,6 +429,7 @@ class BlancHelp(Blanc):
             model_name=model_name,
             measure=measure,
             gap=gap,
+            gap_mask=gap_mask,
             min_token_length_normal=min_token_length_normal,
             min_token_length_lead=min_token_length_lead,
             min_token_length_followup=min_token_length_followup,
@@ -499,6 +505,7 @@ class BlancTune(Blanc):
         model_name=Defaults.model_name,
         measure=Defaults.measure,
         gap=Defaults.gap,
+        gap_mask=Defaults.gap_mask,
         min_token_length_normal=Defaults.min_token_length_normal,
         min_token_length_lead=Defaults.min_token_length_lead,
         min_token_length_followup=Defaults.min_token_length_followup,
@@ -519,6 +526,7 @@ class BlancTune(Blanc):
             model_name=model_name,
             measure=measure,
             gap=gap,
+            gap_mask=gap_mask,
             min_token_length_normal=min_token_length_normal,
             min_token_length_lead=min_token_length_lead,
             min_token_length_followup=min_token_length_followup,

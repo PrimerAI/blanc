@@ -3,7 +3,7 @@ This is the reference implementation of BLANC-help and BLANC-tune as defined in 
 
 BLANC is a new approach to the automatic estimation of document summary quality. Our goal is to measure the functional performance of a summary with an objective, reproducible, and fully automated method. Our approach achieves this by measuring the performance boost gained by a pre-trained language model with access to a document summary while carrying out its language understanding task on the document's text. We present evidence that BLANC scores have at least as good correlation with human evaluations as do the ROUGE family of summary quality measurements. And unlike ROUGE, the BLANC method does not require human-written reference summaries, allowing for fully human-free summary quality estimation.
 
-Two types of BLANC scores are introduced in the paper and available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases. We found that BLANC with gap=2 on average works the best [Sensitivity of BLANC to human-scored qualities of text summaries](https://arxiv.org/abs/2010.06716), it is now set as default. The original paper used gap=6. 
+Two types of BLANC scores are introduced in the paper and available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases. We found that BLANC with gap=2 on average works the best [Sensitivity of BLANC to human-scored qualities of text summaries](https://arxiv.org/abs/2010.06716), it is now set as default. The original paper used gap=6.
 
 ## Setup
 1. Install Python 3.6 or higher
@@ -96,6 +96,9 @@ arguments for BLANC-help and BLANC-tune:
                         (default: relative)
   --gap GAP             distance between words to mask during inference
                         (default: 2)
+  --gap_mask NUM        number of tokens to mask during inference at each 
+                        gap-defined position
+                        (default: 1)
   --min_token_length_normal LEN
                         minimum number of chars in normal tokens to mask,
                         where a normal token is a whole word (default: 4)

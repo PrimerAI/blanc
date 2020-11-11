@@ -91,6 +91,12 @@ def main():
         default=Defaults.gap,
     )
     blanc_parser.add_argument(
+        '--gap_mask',
+        type=int,
+        help='number of tokens to mask at each designated position during inference',
+        default=Defaults.gap_mask,
+    )
+    blanc_parser.add_argument(
         '--min_token_length_normal',
         type=int,
         help=(
@@ -138,7 +144,7 @@ def main():
         '--inference_mask_evenly',
         type=bool,
         help=(
-            'when True, mask every `gap` tokens that are longer than `min_token_length`'
+            'when True, mask every `gap` tokens ('gap_mask' tokens at once) that are longer than `min_token_length`'
             'during finetuning, when False randomly mask tokens with probability 0.15'
         ),
         default=Defaults.inference_mask_evenly,
@@ -183,7 +189,7 @@ def main():
         '--finetune_mask_evenly',
         type=bool,
         help=(
-            'when True, mask every `gap` tokens that are longer than `min_token_length`'
+            'when True, mask every `gap` tokens ('gap_mask' tokens at once) that are longer than `min_token_length`'
             'during finetuning, when False randomly mask tokens with probability 0.15'
         ),
         default=Defaults.finetune_mask_evenly,
@@ -229,6 +235,7 @@ def main():
             model_name=args.model_name,
             measure=args.measure,
             gap=args.gap,
+            gap_mask=args.gap_mask,
             min_token_length_normal=args.min_token_length_normal,
             min_token_length_lead=args.min_token_length_lead,
             min_token_length_followup=args.min_token_length_followup,
@@ -243,6 +250,7 @@ def main():
             model_name=args.model_name,
             measure=args.measure,
             gap=args.gap,
+            gap_mask=args.gap_mask,
             min_token_length_normal=args.min_token_length_normal,
             min_token_length_lead=args.min_token_length_lead,
             min_token_length_followup=args.min_token_length_followup,

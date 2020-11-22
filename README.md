@@ -3,7 +3,7 @@ This is the reference implementation of BLANC-help and BLANC-tune as defined in 
 
 BLANC is a new approach to the automatic estimation of document summary quality. Our goal is to measure the functional performance of a summary with an objective, reproducible, and fully automated method. Our approach achieves this by measuring the performance boost gained by a pre-trained language model with access to a document summary while carrying out its language understanding task on the document's text. We present evidence that BLANC scores have at least as good correlation with human evaluations as do the ROUGE family of summary quality measurements. And unlike ROUGE, the BLANC method does not require human-written reference summaries, allowing for fully human-free summary quality estimation.
 
-Two types of BLANC scores are introduced in the paper and available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases. We found that BLANC with gap=2 on average works the best [Sensitivity of BLANC to human-scored qualities of text summaries](https://arxiv.org/abs/2010.06716), it is now set as default. The original paper used gap=6.
+Two types of BLANC scores are introduced in the paper and available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases. We found that BLANC with gap=2 on average works the best [Sensitivity of BLANC to human-scored qualities of text summaries](https://arxiv.org/abs/2010.06716), it is now set as default. The original paper used gap=6. The datasets are in data.
 
 ## Setup
 1. Install Python 3.6 or higher
@@ -18,7 +18,7 @@ Basic usage:
 >>> document = "Jack drove his minivan to the bazaar to purchase milk and honey for his large family."
 >>> summary = "Jack bought milk and honey."
 >>> blanc_help = BlancHelp()
->>> blanc_tune = BlancTune()
+>>> blanc_tune = BlancTune(finetune_mask_evenly=False)
 >>> blanc_help.eval_once(document, summary)
 0.2222222222222222
 >>> blanc_tune.eval_once(document, summary)
@@ -28,7 +28,7 @@ Basic usage:
 By default, BLANC is run on the CPU. Using CUDA with batching is much faster:
 ```python
 blanc_help = BlancHelp(device='cuda', inference_batch_size=128)
-blanc_tune = BlancTune(device='cuda', inference_batch_size=24, finetune_batch_size=24)
+blanc_tune = BlancTune(device='cuda', inference_batch_size=24, finetune_mask_evenly=False, finetune_batch_size=24)
 ```
 With these batch sizes, BLANC-help takes around 1.4 sec per summary and BLANC-tune takes around 1.8 sec per summary on an NVIDIA V100. In addition to the parameters controlling device and batch sizes, BlancHelp and BlancTune take several other parameters controlling how the BLANC scores are calculated, and the default values for those parameters reproduce the results of the paper.
 
@@ -58,9 +58,9 @@ Input data can also be provided in JSON format, with sample JSON input provided 
 ```
 $ blanc help --single_json data/single.json --gap 6
 0.1111111111111111
-$ blanc tune --pairs_json data/pairs.json --gap 6
+$ blanc tune --pairs_json data/pairs.json --gap 6 --finetune_mask_evenly False
 [0.2222222222222222, 0.14285714285714285]
-$ blanc tune --doc_summaries_json data/doc-summaries.json --gap 6
+$ blanc tune --doc_summaries_json data/doc-summaries.json --gap 6 --finetune_mask_evenly False
 [[0.2222222222222222, 0.2222222222222222], [0.14285714285714285, 0.07142857142857142]]
 ```
 

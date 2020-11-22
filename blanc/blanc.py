@@ -27,8 +27,6 @@ from blanc.utils import (
     TOKEN_TYPE_A,
     LABEL_IGNORE,
     BERT_MAX_TOKENS,
-    P_TOKEN_REPLACE,
-    P_TOKEN_ORIGINAL,
     TOKEN_REPLACE_RANGE,
 )
 
@@ -52,6 +50,7 @@ class Blanc:
         inference_batch_size=Defaults.inference_batch_size,
         inference_mask_evenly=Defaults.inference_mask_evenly,
         len_sent_allow_cut=Defaults.len_sent_allow_cut,
+        p_mask=Defaults.p_mask
     ):
         """This class should not be instantiated directly: instead use BlancHelp or BlancTune"""
         self.model_name = model_name
@@ -65,6 +64,7 @@ class Blanc:
         self.inference_batch_size = inference_batch_size
         self.inference_mask_evenly = inference_mask_evenly
         self.len_sent_allow_cut = len_sent_allow_cut
+        self.p_mask = p_mask
 
         self.model_tokenizer = BertTokenizer.from_pretrained(model_name)
 
@@ -345,6 +345,7 @@ class Blanc:
                 tokens=tokens,
                 min_token_lengths=min_token_lengths,
                 mask_token=self.model_tokenizer.mask_token,
+                p_mask=self.p_mask,
             )
 
     def judge_output(self, base_output, assisted_output, base_answers, assisted_answers):
@@ -423,6 +424,7 @@ class BlancHelp(Blanc):
         len_sent_allow_cut=Defaults.len_sent_allow_cut,
         filler_token=Defaults.filler_token,
         help_sep=Defaults.help_sep,
+        p_mask=Defaults.p_mask,
     ):
         """See CLI documentation (blanc --help) for information about each arg"""
         super().__init__(
@@ -437,6 +439,7 @@ class BlancHelp(Blanc):
             inference_batch_size=inference_batch_size,
             inference_mask_evenly=inference_mask_evenly,
             len_sent_allow_cut=len_sent_allow_cut,
+            p_mask=p_mask,
         )
 
         self.filler_token = filler_token
@@ -518,6 +521,9 @@ class BlancTune(Blanc):
         len_sent_allow_cut=Defaults.len_sent_allow_cut,
         finetune_chunk_size=Defaults.finetune_chunk_size,
         finetune_chunk_stride=Defaults.finetune_chunk_stride,
+        p_mask=Defaults.p_mask,
+        p_token_replace=Defaults.p_token_replace,
+        p_token_original=Defaults.p_token_original,
         learning_rate=Defaults.learning_rate,
         warmup_steps=Defaults.warmup_steps,
     ):
@@ -541,6 +547,9 @@ class BlancTune(Blanc):
         self.finetune_mask_evenly = finetune_mask_evenly
         self.finetune_chunk_size = finetune_chunk_size
         self.finetune_chunk_stride = finetune_chunk_stride
+        self.p_mask = p_mask
+        self.p_token_replace = p_token_replace
+        self.p_token_original = p_token_original
         self.learning_rate = learning_rate
         self.warmup_steps = warmup_steps
 
@@ -719,10 +728,10 @@ class BlancTune(Blanc):
                 labels[idx] = original_token_id
 
                 random_number = random.random()
-                if random_number < P_TOKEN_REPLACE:
+                if random_number < self.p_token_replace:
                     # replace with a random token
                     input_ids[idx] = random.randint(*TOKEN_REPLACE_RANGE)
-                elif random_number < P_TOKEN_ORIGINAL + P_TOKEN_REPLACE:
+                elif random_number < self.p_token_original + self.p_token_replace:
                     # use original token
                     input_ids[idx] = original_token_id
 

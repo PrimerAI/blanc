@@ -8,12 +8,6 @@ from torch.nn.utils.rnn import pad_sequence
 
 # prefix used by the wordpiece tokenizer to indicate that the token continues the previous word
 WORDPIECE_PREFIX = '##'
-# probability of masking a token during BERT training
-P_MASK = 0.15
-# probability of replacing a masked token with a random token
-P_TOKEN_REPLACE = 0.1
-# probability of using the original token instead of masking it
-P_TOKEN_ORIGINAL = 0.1
 # a range of reasonable token ids to use for replacement during model training
 TOKEN_REPLACE_RANGE = (1000, 29999)
 # attention mask value that tells the model to not ignore the token
@@ -61,6 +55,9 @@ Config = namedtuple(
         'finetune_mask_evenly',
         'finetune_chunk_size',
         'finetune_chunk_stride',
+        'p_mask',
+        'p_token_replace',
+        'p_token_original',
         'learning_rate',
         'warmup_steps',
     ],
@@ -90,8 +87,11 @@ Defaults = Config(
     finetune_epochs=10,
     finetune_chunk_size=64,
     finetune_chunk_stride=32,
+    p_mask=0.15,
+    p_token_replace=0.1,
+    p_token_original=0.1,
     learning_rate=5e-5,
-    finetune_mask_evenly=False,
+    finetune_mask_evenly=True,
     warmup_steps=0,
 )
 
@@ -180,7 +180,7 @@ def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token, gap_mask=1):
     return masked_inputs, all_answers
 
 
-def mask_tokens_randomly(tokens, min_token_lengths, mask_token):
+def mask_tokens_randomly(tokens, min_token_lengths, mask_token, p_mask):
     """Produce several maskings for the given tokens by randomly choosing tokens to mask
 
     Args:
@@ -195,7 +195,7 @@ def mask_tokens_randomly(tokens, min_token_lengths, mask_token):
         all_answers (List[Dict[int, str]]): a list of "answer" dicts, where each answer dict maps
             token indices corresponding to masked tokens back to their original token.
     """
-    n_mask = max(int(len(tokens) * P_MASK), 1)
+    n_mask = max(int(len(tokens) * p_mask), 1)
 
     token_positions = []
     for idx, token in enumerate(tokens):

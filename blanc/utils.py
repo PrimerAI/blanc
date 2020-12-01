@@ -40,9 +40,14 @@ Config = namedtuple(
         'measure',
         'gap',
         'gap_mask',
+        'gap_tune',
+        'gap_mask_tune',
         'min_token_length_normal',
         'min_token_length_lead',
         'min_token_length_followup',
+        'min_token_length_normal_tune',
+        'min_token_length_lead_tune',
+        'min_token_length_followup_tune',
         'device',
         'random_seed',
         'inference_batch_size',
@@ -55,6 +60,9 @@ Config = namedtuple(
         'finetune_mask_evenly',
         'finetune_chunk_size',
         'finetune_chunk_stride',
+        'id_layer_freeze_below',
+        'id_layer_freeze_above',
+        'show_progress_bar',
         'p_mask',
         'p_token_replace',
         'p_token_original',
@@ -73,9 +81,14 @@ Defaults = Config(
     measure='relative',
     gap=2,
     gap_mask=1,
+    gap_tune=-1,
+    gap_mask_tune=-1,
     min_token_length_normal=4,
     min_token_length_lead=2,
     min_token_length_followup=100,
+    min_token_length_normal_tune=-1,
+    min_token_length_lead_tune=-1,
+    min_token_length_followup_tune=-1,
     device='cpu',
     random_seed=1,
     inference_batch_size=1,
@@ -87,6 +100,9 @@ Defaults = Config(
     finetune_epochs=10,
     finetune_chunk_size=64,
     finetune_chunk_stride=32,
+    id_layer_freeze_below=-1,
+    id_layer_freeze_above=-1,
+    show_progress_bar=True,
     p_mask=0.15,
     p_token_replace=0.1,
     p_token_original=0.1,
@@ -163,7 +179,9 @@ def mask_tokens_evenly(tokens, gap, min_token_lengths, mask_token, gap_mask=1):
             large_enough = is_token_large_enough(token, next_token, min_token_lengths)
 
             idx_off = idx % gap
-            if modulus + gap_mask >= gap:
+            if gap == 1:
+                can_mask = True
+            elif modulus + gap_mask >= gap:
                 can_mask = idx_off >= modulus or idx_off < (modulus + gap_mask)%gap
             else:
                 can_mask = idx_off >= modulus and idx_off < modulus + gap_mask

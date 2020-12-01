@@ -43,28 +43,44 @@ class Blanc:
         measure=Defaults.measure,
         gap=Defaults.gap,
         gap_mask=Defaults.gap_mask,
+        gap_tune=Defaults.gap_tune,
+        gap_mask_tune=Defaults.gap_mask_tune,
         min_token_length_normal=Defaults.min_token_length_normal,
         min_token_length_lead=Defaults.min_token_length_lead,
         min_token_length_followup=Defaults.min_token_length_followup,
+        min_token_length_normal_tune=Defaults.min_token_length_normal_tune,
+        min_token_length_lead_tune=Defaults.min_token_length_lead_tune,
+        min_token_length_followup_tune=Defaults.min_token_length_followup_tune,
         device=Defaults.device,
         inference_batch_size=Defaults.inference_batch_size,
         inference_mask_evenly=Defaults.inference_mask_evenly,
         len_sent_allow_cut=Defaults.len_sent_allow_cut,
-        p_mask=Defaults.p_mask
+        p_mask=Defaults.p_mask,
+        show_progress_bar=Defaults.show_progress_bar,
     ):
         """This class should not be instantiated directly: instead use BlancHelp or BlancTune"""
         self.model_name = model_name
         self.measure = measure
         self.gap = gap
         self.gap_mask = gap_mask
+        self.gap_tune = gap_tune
+        self.gap_mask_tune = gap_mask_tune
         self.min_token_length_normal = min_token_length_normal
         self.min_token_length_lead = min_token_length_lead
         self.min_token_length_followup = min_token_length_followup
+        self.min_token_length_normal_tune = min_token_length_normal_tune
+        self.min_token_length_lead_tune = min_token_length_lead_tune
+        self.min_token_length_followup_tune = min_token_length_followup_tune
         self.device = device
         self.inference_batch_size = inference_batch_size
         self.inference_mask_evenly = inference_mask_evenly
         self.len_sent_allow_cut = len_sent_allow_cut
         self.p_mask = p_mask
+        self.show_progress_bar = show_progress_bar
+
+        # The same is intentionally not given:
+        self.gap_tune = self.gap if self.gap_tune < 0 else self.gap_tune
+        self.gap_mask_tune = self.gap_mask if self.gap_mask_tune < 0 else self.gap_mask_tune
 
         self.model_tokenizer = BertTokenizer.from_pretrained(model_name)
 
@@ -125,7 +141,7 @@ class Blanc:
         """
         raise NotImplementedError()
 
-    def mask_and_infer(self, model, docs, doc_summaries, loading_bar=True, sep=None):
+    def mask_and_infer(self, model, docs, doc_summaries, sep=None):
         """Run the given model on masked versions of the provided doc_summaries and collect model
         output
 
@@ -133,7 +149,6 @@ class Blanc:
             model (BertForMaskedLM): a BERT for masked language modeling torch model
             docs (List[str]): A list of input documents
             doc_summaries (List[List[str]]): A list of summaries for every input document
-            loading_bar (bool): whether or not to use a tqdm loading bar to show progress
             sep (str): Separator between the inference help (summary) and a sentence from the doc
 
         Returns:
@@ -144,6 +159,7 @@ class Blanc:
                 doc, for each input sequence for the summary, we have a dict mapping indices to
                 original tokens
         """
+
         # Prepare inputs
         all_inputs, all_answers = [], []
         for doc, summaries in zip(docs, doc_summaries):
@@ -162,7 +178,7 @@ class Blanc:
         collapsed_inputs = sum(sum(all_inputs, []), [])
         batched_inputs = batch_data(collapsed_inputs, self.inference_batch_size)
 
-        iterator = tqdm.tqdm(batched_inputs, disable=not loading_bar)
+        iterator = tqdm.tqdm(batched_inputs, disable=not self.show_progress_bar)
         batched_outputs = [self.run_inference_batch(model, batch) for batch in iterator]
         collapsed_outputs = sum(batched_outputs, [])
 
@@ -331,12 +347,23 @@ class Blanc:
             self.min_token_length_lead,
             self.min_token_length_followup,
         )
+        if is_finetune:
+            min_token_lengths = (
+                self.min_token_length_normal_tune,
+                self.min_token_length_lead_tune,
+                self.min_token_length_followup_tune,
+            )
 
         if even_masking:
+            gap_use = self.gap
+            gap_mask_use = self.gap_mask
+            if is_finetune:
+                gap_use = self.gap_tune
+                gap_mask_use = self.gap_mask_tune
             return mask_tokens_evenly(
                 tokens=tokens,
-                gap=self.gap,
-                gap_mask=self.gap_mask,
+                gap=gap_use,
+                gap_mask=gap_mask_use,
                 min_token_lengths=min_token_lengths,
                 mask_token=self.model_tokenizer.mask_token,
             )
@@ -415,9 +442,14 @@ class BlancHelp(Blanc):
         measure=Defaults.measure,
         gap=Defaults.gap,
         gap_mask=Defaults.gap_mask,
+        gap_tune=Defaults.gap_tune,
+        gap_mask_tune=Defaults.gap_mask_tune,
         min_token_length_normal=Defaults.min_token_length_normal,
         min_token_length_lead=Defaults.min_token_length_lead,
         min_token_length_followup=Defaults.min_token_length_followup,
+        min_token_length_normal_tune=Defaults.min_token_length_normal_tune,
+        min_token_length_lead_tune=Defaults.min_token_length_lead_tune,
+        min_token_length_followup_tune=Defaults.min_token_length_followup_tune,
         device=Defaults.device,
         inference_batch_size=Defaults.inference_batch_size,
         inference_mask_evenly=Defaults.inference_mask_evenly,
@@ -425,6 +457,7 @@ class BlancHelp(Blanc):
         filler_token=Defaults.filler_token,
         help_sep=Defaults.help_sep,
         p_mask=Defaults.p_mask,
+        show_progress_bar=Defaults.show_progress_bar,
     ):
         """See CLI documentation (blanc --help) for information about each arg"""
         super().__init__(
@@ -432,14 +465,20 @@ class BlancHelp(Blanc):
             measure=measure,
             gap=gap,
             gap_mask=gap_mask,
+            gap_tune=gap_tune,
+            gap_mask_tune=gap_mask_tune,
             min_token_length_normal=min_token_length_normal,
             min_token_length_lead=min_token_length_lead,
             min_token_length_followup=min_token_length_followup,
+            min_token_length_normal_tune=min_token_length_normal_tune,
+            min_token_length_lead_tune=min_token_length_lead_tune,
+            min_token_length_followup_tune=min_token_length_followup_tune,
             device=device,
             inference_batch_size=inference_batch_size,
             inference_mask_evenly=inference_mask_evenly,
             len_sent_allow_cut=len_sent_allow_cut,
             p_mask=p_mask,
+            show_progress_bar=show_progress_bar,
         )
 
         self.filler_token = filler_token
@@ -509,10 +548,15 @@ class BlancTune(Blanc):
         measure=Defaults.measure,
         gap=Defaults.gap,
         gap_mask=Defaults.gap_mask,
+        gap_tune=Defaults.gap_tune,
+        gap_mask_tune=Defaults.gap_mask_tune,
         min_token_length_normal=Defaults.min_token_length_normal,
         min_token_length_lead=Defaults.min_token_length_lead,
         min_token_length_followup=Defaults.min_token_length_followup,
         device=Defaults.device,
+        min_token_length_normal_tune=Defaults.min_token_length_normal_tune,
+        min_token_length_lead_tune=Defaults.min_token_length_lead_tune,
+        min_token_length_followup_tune=Defaults.min_token_length_followup_tune,
         inference_batch_size=Defaults.inference_batch_size,
         inference_mask_evenly=Defaults.inference_mask_evenly,
         finetune_batch_size=Defaults.finetune_batch_size,
@@ -521,6 +565,9 @@ class BlancTune(Blanc):
         len_sent_allow_cut=Defaults.len_sent_allow_cut,
         finetune_chunk_size=Defaults.finetune_chunk_size,
         finetune_chunk_stride=Defaults.finetune_chunk_stride,
+        id_layer_freeze_below=Defaults.id_layer_freeze_below,
+        id_layer_freeze_above=Defaults.id_layer_freeze_above,
+        show_progress_bar=Defaults.show_progress_bar,
         p_mask=Defaults.p_mask,
         p_token_replace=Defaults.p_token_replace,
         p_token_original=Defaults.p_token_original,
@@ -533,9 +580,14 @@ class BlancTune(Blanc):
             measure=measure,
             gap=gap,
             gap_mask=gap_mask,
+            gap_tune=gap_tune,
+            gap_mask_tune=gap_mask_tune,
             min_token_length_normal=min_token_length_normal,
             min_token_length_lead=min_token_length_lead,
             min_token_length_followup=min_token_length_followup,
+            min_token_length_normal_tune=min_token_length_normal_tune,
+            min_token_length_lead_tune=min_token_length_lead_tune,
+            min_token_length_followup_tune=min_token_length_followup_tune,
             device=device,
             inference_batch_size=inference_batch_size,
             inference_mask_evenly=inference_mask_evenly,
@@ -547,19 +599,33 @@ class BlancTune(Blanc):
         self.finetune_mask_evenly = finetune_mask_evenly
         self.finetune_chunk_size = finetune_chunk_size
         self.finetune_chunk_stride = finetune_chunk_stride
+        self.id_layer_freeze_below = id_layer_freeze_below
+        self.id_layer_freeze_above = id_layer_freeze_above
+        self.show_progress_bar = show_progress_bar
         self.p_mask = p_mask
         self.p_token_replace = p_token_replace
         self.p_token_original = p_token_original
         self.learning_rate = learning_rate
         self.warmup_steps = warmup_steps
 
+        # The same is intentionally not given:
+        self.gap_tune = self.gap if self.gap_tune < 0 else self.gap_tune
+        self.gap_mask_tune = self.gap_mask if self.gap_mask_tune < 0 else self.gap_mask_tune
+        self.min_token_length_normal_tune = self.min_token_length_normal if self.min_token_length_normal_tune < 0 else self.min_token_length_normal_tune
+        self.min_token_length_lead_tune = self.min_token_length_lead if self.min_token_length_lead_tune < 0 else self.min_token_length_lead_tune
+        self.min_token_length_followup_tune = self.min_token_length_followup if self.min_token_length_followup_tune < 0 else self.min_token_length_followup_tune
+
         self.base_model = self.init_model(self.device)
 
     def eval_summaries_for_docs(self, docs, doc_summaries):
         """Calculate the BLANC score for multiple docs, each with multiple summaries.
         See documentation in superclass.
+        Note that a summary should not be used in any ways for base outputs and base answers.
+        When a finetuned model is used, the summary can used, meaning that 'help' and 'tune' versions of BLANC are put together.
         """
-        base_outputs, base_answers = self.mask_and_infer(self.base_model, docs, doc_summaries)
+
+        doc_summaries_use = [[None for s in summs] for summs in doc_summaries]
+        base_outputs, base_answers = self.mask_and_infer(self.base_model, docs, doc_summaries_use)
 
         finetuned_outputs, finetuned_answers = [], []
         model_cpu = self.init_model(device='cpu')
@@ -571,7 +637,7 @@ class BlancTune(Blanc):
                 self.finetune(finetuned_model, summary)
 
                 (finetuned_summary_output,), (finetuned_summary_answer,) = self.mask_and_infer(
-                    finetuned_model, [doc], [[summary]], loading_bar=False
+                    finetuned_model, [doc], [[None]]
                 )
                 finetuned_doc_outputs += finetuned_summary_output
                 finetuned_doc_answers += finetuned_summary_answer
@@ -636,7 +702,16 @@ class BlancTune(Blanc):
             summary (str): the summary to finetune on
         """
         model.train()
-
+        n_params = len(list(model.parameters()))
+        # Freeze a few lowest or a few highest layers:
+        if self.id_layer_freeze_below > 0 or self.id_layer_freeze_above > 0:
+            for i, param in enumerate(model.parameters()):
+                if i < self.id_layer_freeze_below:
+                    param.requires_grad = False
+                elif self.id_layer_freeze_above < 0:
+                    break
+                elif n_params - i < self.id_layer_freeze_above:
+                    param.requires_grad = False
         all_inputs = self.prepare_finetuning_data(summary)
         input_batches = batch_data(all_inputs, self.finetune_batch_size)
 

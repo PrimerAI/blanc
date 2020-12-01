@@ -97,6 +97,18 @@ def main():
         default=Defaults.gap_mask,
     )
     blanc_parser.add_argument(
+        '--gap_tune',
+        type=int,
+        help='distance between words to mask during finetuning',
+        default=Defaults.gap,
+    )
+    blanc_parser.add_argument(
+        '--gap_mask_tune',
+        type=int,
+        help='number of tokens to mask at each designated position during finetuning',
+        default=Defaults.gap_mask,
+    )
+    blanc_parser.add_argument(
         '--min_token_length_normal',
         type=int,
         help=(
@@ -236,6 +248,8 @@ def main():
             measure=args.measure,
             gap=args.gap,
             gap_mask=args.gap_mask,
+            gap_tune=args.gap_tune,
+            gap_mask_tune=args.gap_mask_tune,
             min_token_length_normal=args.min_token_length_normal,
             min_token_length_lead=args.min_token_length_lead,
             min_token_length_followup=args.min_token_length_followup,
@@ -251,6 +265,8 @@ def main():
             measure=args.measure,
             gap=args.gap,
             gap_mask=args.gap_mask,
+            gap_tune=args.gap_tune,
+            gap_mask_tune=args.gap_mask_tune,
             min_token_length_normal=args.min_token_length_normal,
             min_token_length_lead=args.min_token_length_lead,
             min_token_length_followup=args.min_token_length_followup,

@@ -565,6 +565,7 @@ class BlancTune(Blanc):
         len_sent_allow_cut=Defaults.len_sent_allow_cut,
         finetune_chunk_size=Defaults.finetune_chunk_size,
         finetune_chunk_stride=Defaults.finetune_chunk_stride,
+        finetune_top_fully=Defaults.finetune_top_fully,
         id_layer_freeze_below=Defaults.id_layer_freeze_below,
         id_layer_freeze_above=Defaults.id_layer_freeze_above,
         show_progress_bar=Defaults.show_progress_bar,
@@ -599,6 +600,7 @@ class BlancTune(Blanc):
         self.finetune_mask_evenly = finetune_mask_evenly
         self.finetune_chunk_size = finetune_chunk_size
         self.finetune_chunk_stride = finetune_chunk_stride
+        self.finetune_top_fully = finetune_top_fully
         self.id_layer_freeze_below = id_layer_freeze_below
         self.id_layer_freeze_above = id_layer_freeze_above
         self.show_progress_bar = show_progress_bar
@@ -759,6 +761,8 @@ class BlancTune(Blanc):
 
     def prepare_finetuning_data(self, summary):
         """Create a finetuning dataset using chunks of the given summary
+        The finetune_top_fully=True compensate finetuning of top tokens, which
+            otherwise get less tuning than tokens at further strides.
 
         Args:
             summary (str): the input summary to finetune on
@@ -772,6 +776,9 @@ class BlancTune(Blanc):
             end_token = start_token + self.finetune_chunk_size
             chunk_tokens = summary_tokens[start_token:end_token]
             model_inputs += self.assemble_finetuning_input(chunk_tokens)
+            if self.finetune_top_fully and start_token > 0 and start_token < self.finetune_chunk_size:
+                chunk_tokens = summary_tokens[:start_token]
+                model_inputs += self.assemble_finetuning_input(chunk_tokens)
         return model_inputs
 
     def assemble_finetuning_input(self, chunk_tokens):

@@ -1,9 +1,9 @@
 # BLANC
-This is the reference implementation of BLANC-help and BLANC-tune as defined in [Fill in the BLANC: Human-free quality estimation of document summaries](https://arxiv.org/abs/2002.09836). 
+This is the reference implementation of BLANC-help and BLANC-tune as defined in [Fill in the BLANC: Human-free quality estimation of document summaries](https://www.aclweb.org/anthology/2020.eval4nlp-1.2/), originally [in arxiv](https://arxiv.org/abs/2002.09836). 
 
 BLANC is a new approach to the automatic estimation of document summary quality. Our goal is to measure the functional performance of a summary with an objective, reproducible, and fully automated method. Our approach achieves this by measuring the performance boost gained by a pre-trained language model with access to a document summary while carrying out its language understanding task on the document's text. We present evidence that BLANC scores have at least as good correlation with human evaluations as do the ROUGE family of summary quality measurements. And unlike ROUGE, the BLANC method does not require human-written reference summaries, allowing for fully human-free summary quality estimation.
 
-Two types of BLANC scores are introduced in the paper and available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases. We found that BLANC with gap=2 on average works the best [Sensitivity of BLANC to human-scored qualities of text summaries](https://arxiv.org/abs/2010.06716), it is now set as default. The original paper used gap=6. The datasets are in data.
+Two types of BLANC scores are introduced in the paper and available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases. We found that BLANC with gap=2 on average works the best [Sensitivity of BLANC to human-scored qualities of text summaries](https://arxiv.org/abs/2010.06716), it is now set as default. The original paper used gap=6. The datasets are in [data](https://github.com/PrimerAI/blanc/tree/master/data).
 
 ## Setup
 1. Install Python 3.6 or higher
@@ -21,7 +21,7 @@ Basic usage:
 >>> blanc_tune = BlancTune(finetune_mask_evenly=False)
 >>> blanc_help.eval_once(document, summary)
 0.2222222222222222
->>> blanc_tune.eval_once(document, summary)
+>>> blanc_tune.eval_once(document, summary, show_progress_bar=False)
 0.3333333333333333
 ```
 

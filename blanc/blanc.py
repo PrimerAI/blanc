@@ -631,7 +631,7 @@ class BlancTune(Blanc):
 
         finetuned_outputs, finetuned_answers = [], []
         model_cpu = self.init_model(device='cpu')
-        for doc, summaries in tqdm.tqdm(zip(docs, doc_summaries), total=len(docs)):
+        for doc, summaries in tqdm.tqdm(zip(docs, doc_summaries), total=len(docs), disable=not self.show_progress_bar):
             finetuned_doc_outputs, finetuned_doc_answers = [], []
             for summary in summaries:
                 model_copy = copy.deepcopy(model_cpu)

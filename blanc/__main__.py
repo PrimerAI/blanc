@@ -136,6 +136,33 @@ def main():
         metavar='LEN',
     )
     blanc_parser.add_argument(
+        '--min_token_length_normal_tune',
+        type=int,
+        help=(
+            'minimum number of chars in normal tokens to mask at tuning, where a normal token is '
+            'a whole word'
+        ),
+        default=Defaults.min_token_length_normal_tune,
+        metavar='LEN',
+    )
+    blanc_parser.add_argument(
+        '--min_token_length_lead_tune',
+        type=int,
+        help='minimum number of chars in lead token to mask at tuning, where a lead token begins a word',
+        default=Defaults.min_token_length_lead_tune,
+        metavar='LEN',
+    )
+    blanc_parser.add_argument(
+        '--min_token_length_followup_tune',
+        type=int,
+        help=(
+            'minimum number of chars in followup token to mask at tuning, where a followup token '
+            'continues a word'
+        ),
+        default=Defaults.min_token_length_followup_tune,
+        metavar='LEN',
+    )
+    blanc_parser.add_argument(
         '--device', type=str, help='cpu or cuda device', default=Defaults.device,
     )
     blanc_parser.add_argument(
@@ -156,7 +183,7 @@ def main():
         '--inference_mask_evenly',
         type=bool,
         help=(
-            'when True, mask every `gap` tokens ('gap_mask' tokens at once) that are longer than `min_token_length`'
+            'when True, mask every `gap` tokens (`gap_mask` tokens at once) that are longer than `min_token_length`'
             'during finetuning, when False randomly mask tokens with probability 0.15'
         ),
         default=Defaults.inference_mask_evenly,
@@ -253,6 +280,9 @@ def main():
             min_token_length_normal=args.min_token_length_normal,
             min_token_length_lead=args.min_token_length_lead,
             min_token_length_followup=args.min_token_length_followup,
+            min_token_length_normal_tune=min_token_length_normal_tune,
+            min_token_length_lead_tune=min_token_length_lead_tune,
+            min_token_length_followup_tune=min_token_length_followup_tune,
             device=args.device,
             inference_batch_size=args.inference_batch_size,
             inference_mask_evenly=args.inference_mask_evenly,
@@ -270,6 +300,9 @@ def main():
             min_token_length_normal=args.min_token_length_normal,
             min_token_length_lead=args.min_token_length_lead,
             min_token_length_followup=args.min_token_length_followup,
+            min_token_length_normal_tune=min_token_length_normal_tune,
+            min_token_length_lead_tune=min_token_length_lead_tune,
+            min_token_length_followup_tune=min_token_length_followup_tune,
             device=args.device,
             inference_batch_size=args.inference_batch_size,
             inference_mask_evenly=args.inference_mask_evenly,

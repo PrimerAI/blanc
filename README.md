@@ -18,10 +18,10 @@ Basic usage:
 >>> document = "Jack drove his minivan to the bazaar to purchase milk and honey for his large family."
 >>> summary = "Jack bought milk and honey."
 >>> blanc_help = BlancHelp()
->>> blanc_tune = BlancTune(finetune_mask_evenly=False)
+>>> blanc_tune = BlancTune(finetune_mask_evenly=False, show_progress_bar=False)
 >>> blanc_help.eval_once(document, summary)
 0.2222222222222222
->>> blanc_tune.eval_once(document, summary, show_progress_bar=False)
+>>> blanc_tune.eval_once(document, summary)
 0.3333333333333333
 ```
 

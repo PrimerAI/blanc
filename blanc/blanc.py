@@ -23,6 +23,7 @@ from blanc.utils import (
     clean_text,
     truncate_list_of_lists,
     truncate_sentence_and_summary,
+    set_seed,
     NOT_MASKED,
     TOKEN_TYPE_A,
     LABEL_IGNORE,
@@ -363,9 +364,9 @@ class Blanc:
             return mask_tokens_evenly(
                 tokens=tokens,
                 gap=gap_use,
-                gap_mask=gap_mask_use,
                 min_token_lengths=min_token_lengths,
                 mask_token=self.model_tokenizer.mask_token,
+                gap_mask=gap_mask_use,
             )
         else:
             return mask_tokens_randomly(
@@ -421,14 +422,18 @@ class Blanc:
 
     def init_model(self, device):
         """Initialize the language model and send it to the given device
-
+        Note: Transformers v.4 and higher made default return_dict=True.
         Args:
             device (str): torch device (usually "cpu" or "cuda")
 
         Returns:
             model (BertForMaskedLM): a BERT for masked language modeling torch model
         """
-        model = BertForMaskedLM.from_pretrained(self.model_name).to(device)
+        model = None
+        try:
+            model = BertForMaskedLM.from_pretrained(self.model_name, return_dict=False).to(device)
+        except:
+            model = BertForMaskedLM.from_pretrained(self.model_name).to(device)
         model.eval()
         return model
 
@@ -574,6 +579,7 @@ class BlancTune(Blanc):
         p_token_original=Defaults.p_token_original,
         learning_rate=Defaults.learning_rate,
         warmup_steps=Defaults.warmup_steps,
+        random_seed=Defaults.random_seed,
     ):
         """See CLI documentation (blanc --help) for information about each arg"""
         super().__init__(
@@ -609,6 +615,7 @@ class BlancTune(Blanc):
         self.p_token_original = p_token_original
         self.learning_rate = learning_rate
         self.warmup_steps = warmup_steps
+        self.random_seed = random_seed
 
         # The same is intentionally not given:
         self.gap_tune = self.gap if self.gap_tune < 0 else self.gap_tune
@@ -703,6 +710,8 @@ class BlancTune(Blanc):
             model (BertForMaskedLM): a BERT for masked language modeling torch model
             summary (str): the summary to finetune on
         """
+        if self.random_seed > 0:
+            set_seed(self.random_seed)
         model.train()
         n_params = len(list(model.parameters()))
         # Freeze a few lowest or a few highest layers:

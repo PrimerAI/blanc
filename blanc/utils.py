@@ -91,7 +91,7 @@ Defaults = Config(
     min_token_length_lead_tune=-1,
     min_token_length_followup_tune=-1,
     device='cpu',
-    random_seed=1,
+    random_seed=0,
     inference_batch_size=1,
     inference_mask_evenly=True,
     len_sent_allow_cut=100,
@@ -112,6 +112,11 @@ Defaults = Config(
     finetune_mask_evenly=True,
     warmup_steps=0,
 )
+
+
+def set_seed(seed_value):
+    random.seed(seed_value)
+    torch.manual_seed(seed_value)
 
 
 def batch_data(data, batch_size):

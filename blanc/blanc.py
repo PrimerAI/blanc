@@ -420,7 +420,7 @@ class Blanc:
             if self.measure == 'improve-counts':
                 result = result, S
         else:
-            raise NotImplementedError(f'unknown measure {self.measure}')
+            raise NotImplementedError()
 
         return result
 

@@ -9,6 +9,7 @@ import torch
 from torch.nn.utils.rnn import pad_sequence
 import tqdm
 from transformers import BertForMaskedLM, BertTokenizer, AdamW, get_linear_schedule_with_warmup
+from transformers import AlbertForMaskedLM, AlbertTokenizer
 
 from blanc.utils import (
     BertInput,
@@ -83,7 +84,10 @@ class Blanc:
         self.gap_tune = self.gap if self.gap_tune < 0 else self.gap_tune
         self.gap_mask_tune = self.gap_mask if self.gap_mask_tune < 0 else self.gap_mask_tune
 
-        self.model_tokenizer = BertTokenizer.from_pretrained(model_name)
+        if self.model_name.lower().find('albert') >= 0:
+            self.model_tokenizer = AlbertTokenizer.from_pretrained(model_name)
+        else:
+            self.model_tokenizer = AlbertTokenizer.from_pretrained(model_name)
 
     def eval_once(self, doc, summary):
         """Calculate the BLANC score for a single doc with a single summary.
@@ -427,13 +431,19 @@ class Blanc:
             device (str): torch device (usually "cpu" or "cuda")
 
         Returns:
-            model (BertForMaskedLM): a BERT for masked language modeling torch model
+            model: a model for masked language modeling torch model
         """
         model = None
-        try:
-            model = BertForMaskedLM.from_pretrained(self.model_name, return_dict=False).to(device)
-        except:
-            model = BertForMaskedLM.from_pretrained(self.model_name).to(device)
+        if self.model_name.lower().find('albert') >= 0:
+            try:
+                model = AlbertForMaskedLM.from_pretrained(self.model_name, return_dict=False).to(device)
+            except:
+                model = AlbertForMaskedLM.from_pretrained(self.model_name).to(device)
+        else:
+            try:
+                model = BertForMaskedLM.from_pretrained(self.model_name, return_dict=False).to(device)
+            except:
+                model = BertForMaskedLM.from_pretrained(self.model_name).to(device)
         model.eval()
         return model
 
@@ -488,7 +498,6 @@ class BlancHelp(Blanc):
 
         self.filler_token = filler_token
         self.help_sep = self.model_tokenizer.tokenize(help_sep)
-
         self.model = self.init_model(self.device)
 
     def eval_summaries_for_docs(self, docs, doc_summaries):

@@ -87,7 +87,7 @@ class Blanc:
         if self.model_name.lower().find('albert') >= 0:
             self.model_tokenizer = AlbertTokenizer.from_pretrained(model_name)
         else:
-            self.model_tokenizer = AlbertTokenizer.from_pretrained(model_name)
+            self.model_tokenizer = BertTokenizer.from_pretrained(model_name)
 
     def eval_once(self, doc, summary):
         """Calculate the BLANC score for a single doc with a single summary.

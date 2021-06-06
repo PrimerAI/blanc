@@ -756,25 +756,30 @@ class BlancTune(Blanc):
             num_warmup_steps=self.warmup_steps,
             num_training_steps=len(input_batches) * self.finetune_epochs,
         )
-
         for epoch in range(self.finetune_epochs):
             for input_batch in input_batches:
                 input_ids, attention_mask, token_type_ids, labels = get_input_tensors(
                     input_batch, device=self.device, tokenizer=self.model_tokenizer,
                 )
-
                 model.zero_grad()
                 optimizer.zero_grad()
-                loss, _ = model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    token_type_ids=token_type_ids,
-                    masked_lm_labels=labels,
-                )
+                try:  # masked_lm_labels were deprecated, replace by labels in transformers v4.x
+                    loss, _ = model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        token_type_ids=token_type_ids,
+                        labels=labels,
+                    )
+                except:
+                    loss, _ = model(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        token_type_ids=token_type_ids,
+                        masked_lm_labels=labels,
+                    )
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
-
         model.eval()
 
     def prepare_finetuning_data(self, summary):

@@ -2,7 +2,7 @@ import setuptools
 
 from blanc.__version__ import __version__
 
-with open("README.md") as reader:
+with open("README.md", encoding="utf-8") as reader:
     long_description = reader.read()
 
 with open("requirements.txt") as reader:

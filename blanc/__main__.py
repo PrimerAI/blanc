@@ -228,7 +228,7 @@ def main():
         '--finetune_mask_evenly',
         type=bool,
         help=(
-            'when True, mask every `gap` tokens ('gap_mask' tokens at once) that are longer than `min_token_length`'
+            'when True, mask every `gap` tokens (`gap_mask` tokens at once) that are longer than `min_token_length`'
             'during finetuning, when False randomly mask tokens with probability 0.15'
         ),
         default=Defaults.finetune_mask_evenly,

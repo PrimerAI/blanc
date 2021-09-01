@@ -756,7 +756,6 @@ class BlancTune(Blanc):
             num_warmup_steps=self.warmup_steps,
             num_training_steps=len(input_batches) * self.finetune_epochs,
         )
-
         for epoch in range(self.finetune_epochs):
             for input_batch in input_batches:
                 input_ids, attention_mask, token_type_ids, labels = get_input_tensors(
@@ -781,7 +780,6 @@ class BlancTune(Blanc):
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
-
         model.eval()
 
     def prepare_finetuning_data(self, summary):

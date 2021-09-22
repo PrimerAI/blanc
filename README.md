@@ -1,11 +1,14 @@
 # BLANC
-This is the reference implementation of BLANC-help and BLANC-tune as defined in [Fill in the BLANC: Human-free quality estimation of document summaries](https://www.aclweb.org/anthology/2020.eval4nlp-1.2/), originally [in arxiv](https://arxiv.org/abs/2002.09836).
+This is the reference implementation of BLANC-help and BLANC-tune as defined in [Fill in the BLANC: Human-free quality estimation of document summaries](https://www.aclweb.org/anthology/2020.eval4nlp-1.2/).
 
 BLANC is a reference-free approach to the automatic estimation of document summary quality. Our goal is to measure the functional performance of a summary with an objective, reproducible, and fully automated method. Our approach achieves this by measuring the performance boost gained by a pre-trained language model with access to a document summary while carrying out its language understanding task on the document's text. Unlike ROUGE, BLANC does not require human-written reference summaries, allowing for fully human-free summary quality estimation.
 
 Two types of BLANC scores were introduced in the paper and are available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases. BLANC-help with gap=2 on average correlates the best with human scores [Sensitivity of BLANC to human-scored qualities of text summaries](https://arxiv.org/abs/2010.06716), it is now set as default. The original paper used gap=6. Optimal parameters for BLANC-help and for BLANC-tune are found by using 'max-help' criterion, without relying on human summaries or human scores, in [Is Human Scoring the Best Criteria for Summary Evaluation?](https://aclanthology.org/2021.findings-acl.192).
 
+## More
 The datasets are in [data](https://github.com/PrimerAI/blanc/tree/master/data).
+
+A different, factual consistency emphasis reference-free measure ESTIME is in [estime](https://github.com/PrimerAI/blanc/tree/master/estime).
 
 ## Setup
 1. Install Python 3.6 or higher

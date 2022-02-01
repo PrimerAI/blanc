@@ -9,7 +9,9 @@ BLANC-help with gap=2 on average correlates the best with human scores [Sensitiv
 ## More
 The datasets: [data](https://github.com/PrimerAI/blanc/tree/master/data).
 
-A different reference-free measure with emphasis on factual consistency: [ESTIME](https://github.com/PrimerAI/blanc/tree/master/estime).
+[Shannon Score and Information Difference](https://github.com/PrimerAI/blanc/tree/master/shannon) measures of summary quality.
+
+[ESTIME (hard, soft and coherence)](https://github.com/PrimerAI/blanc/tree/master/estime) measures with emphasis on factual consistency.
 
 ## Setup
 1. Install Python 3.6 or higher

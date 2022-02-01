@@ -1,6 +1,8 @@
 import unicodedata
 import copy
+import scipy
 from numpy import dot
+from numpy.linalg import norm
 
 import logging
 logging.getLogger('transformers').setLevel(level=logging.WARNING)
@@ -9,86 +11,97 @@ import nltk
 from nltk.tokenize import word_tokenize
 
 import torch
-from transformers import (
-    BertForMaskedLM, BertTokenizer, 
-    RobertaForMaskedLM, RobertaTokenizer,
-    AlbertForMaskedLM, AlbertTokenizer
-) 
+from transformers import BertForMaskedLM, BertTokenizer, BertModel
+
+
+# Names of the measures:
+ESTIME_ALARMS = 'alarms'  # original ESTIME by response of tokens to similar contexts
+ESTIME_SOFT = 'soft'  # soft ESTIME by response of cos between embeddings
+ESTIME_COHERENCE = 'coherence'  # estimation of summary coherence 
 
 
 class Estime:
     """Estimator of factual inconsistencies between summaries (or other textual claims)
-    and text, accordingly to ESTIME paper.
-    Usage is simple: create `Estime`, and use `evaluate_claims`.
+    and text. Usage: create `Estime`, and use `evaluate_claims`.
+    To get all the measures, use output=['alarms','soft','coherence'].
     """
     def __init__(
         self,
-        path_mdl,
-        i_layer_context,
+        path_mdl='bert-large-uncased-whole-word-masking',
+        path_mdl_raw='bert-base-uncased',
+        i_layer_context=21,
         device='cpu',
+        output=[ESTIME_ALARMS],
         tags_check=None,
         tags_exclude=None,
         input_size_max=450,
         margin=50,
-        distance_word_min=8):
+        distance_word_min=8,
+        include_all_tokens=False):
         """
         Args:
-            path_mdl (str): path of the model to load and use
-            i_layer_context (int): index of layer totake contextual embeddings from
+            path_mdl (str): model for embeddings of masked tokens
+            path_mdl_raw (str): model for raw embeddings
+            i_layer_context (int): index of layer to take contextual embeddings from
             device (str): 'cpu' or 'cuda'
             tags_check (List[str]): list of parts of speech to use, each is a tag
                 by NLTK notations. If None, then all words will be used, 
                 no matter which parts of speech they are.
             tags_exclude (List[str]): List or set of part-of-speach tags that should
                 not be considered. Has priority over tags_check.
+            include_all_tokens (Boolean): If True then all summary tokens are considered.
+                Otherwise only tokens existing in the text are considered.
             input_size_max (int): length of input for the model as number of tokens
             margin (int): number of tokens on input edges not to take embeddings from
             distance_word_min (int): minimal distance between the masked tokens 
                 from which embeddings are to ne taken in a single input
+            output (List[str]): list of names of measures to get in claim evaluations
+
         """
+        self.i_layer_context = i_layer_context
         self.device = device
+        self.output = output
+        self.get_estime_soft = ESTIME_SOFT in self.output
+        self.get_estime_coherence = ESTIME_COHERENCE in self.output
         self.tags_check = tags_check
         self.tags_exclude = tags_exclude
-        self.i_layer_context=  i_layer_context
         self.input_size_max = input_size_max
         self.margin = margin
         self.distance_word_min = distance_word_min
+        self.include_all_tokens = include_all_tokens
         self.model_tokenizer = None
         self.model = None
-        if path_mdl.find('roberta') >= 0:
-            self.model_tokenizer = RobertaTokenizer.from_pretrained(path_mdl)
-            self.model = RobertaForMaskedLM.from_pretrained(path_mdl, output_hidden_states = True).to(self.device)
-        elif path_mdl.find('albert') >= 0:
-            self.model_tokenizer = AlbertTokenizer.from_pretrained(path_mdl)
-            self.model = AlbertForMaskedLM.from_pretrained(path_mdl, output_hidden_states = True).to(self.device)
-        else:
-            self.model_tokenizer = BertTokenizer.from_pretrained(path_mdl)
-            self.model = BertForMaskedLM.from_pretrained(path_mdl, output_hidden_states = True).to(self.device)
+        self.model_tokenizer = BertTokenizer.from_pretrained(path_mdl)
+        self.model = BertForMaskedLM.from_pretrained(path_mdl, output_hidden_states = True).to(self.device)
         self.model.eval()
+        if self.get_estime_soft:
+            self.model_raw = BertModel.from_pretrained(path_mdl_raw)
+            self.model_raw.eval()
+            for param in self.model_raw.parameters():
+                param.requires_grad = False
+            self.embeddings_raw = self.model_raw.get_input_embeddings()
         # Convenient data (tokenized summary and text):
         self.summ_toks = None 
         self.text_toks = None
+        self.embs_mask_text = None
+        self.embs_raw_text = None
+
 
     def evaluate_claims(self, text, claims):
         """
         Given a text, and a list of claims (e.g. summaries, or other texts), 
         estimates how many likely factual inconsistencies each claim contains
         (the inconsistencies are with respect to the text).
-        Number of alarms is the main result, because it correlates well with 
-        human-scored factual consistency. Number of winners is comparable.
-        The count of new claim words is just for info.
+        Returns for each claim whatever is specified in self.output
         Args:
             text (str): the main text
             claims (List[str]): texts ('claims') to be checked for consistency 
                 with the main text. Each claim is preferably a shorter text, 
                 like a claim/statement/summary.
         Returns: 
-            claims_info (List[(int,int,int)]): List of tuples. Each tuple is:
-                1. Number of alarms. Each alarm is a location in the claim that 
-                    might be inconsistent with respect to the text
-                1. Number of winners. Each winner is a probable substitution 
-                    from the text into an alarmed location in the claim
-                3. Number of claim words that are not in the text
+            claims_info: list of the same length as claims; each element is a
+                consistency info for the corresponding claim. The info is a list
+                accordingly to the names in self.output.
         """
         # Text:
         text = unicodedata.normalize('NFKD', text)
@@ -99,68 +112,64 @@ class Estime:
         text_iwordscheck = sorted([item for sublist in text_map_wordscheck.values() for item in sublist])
         self.text_toks, text_map_iword_itoks = self._translate_words_to_tokens(text_words)
         # All embeddings of interest in the text:
-        embs_text = self._get_embeddings(
+        self.embs_mask_text = self._get_embeddings(
             tokens=self.text_toks, 
             ixs_words=text_iwordscheck, 
             map_words_to_tokens=text_map_iword_itoks)
-        # For each claim, count number of signals for potential inconsistencies:
+        self.embs_raw_text = self._get_embeddings_raw(tokens=self.text_toks)
+        # Get the consistency info for each claim:
         claims_info = []
         for claim in claims:
             claim = unicodedata.normalize('NFKD', claim)
-            n_alarms, n_winners, n_newwords = self._evaluate_claim(
-                claim, text_map_wordscheck, embs_text)
-            claims_info.append((n_alarms, n_winners, n_newwords))
+            if self.include_all_tokens:
+                claim_info = self._evaluate_claim(claim)
+            else:
+                claim_info = self._evaluate_claim(claim, text_map_wordscheck)
+            claims_info.append(claim_info)
         self.summ_toks = None 
         self.text_toks = None
         return claims_info
 
-    def _evaluate_claim(self, claim, words_check, embs_text):
-        """Finding number of alarms, winners and new words for a claim.
-        Number of alarms is the main result, because it correlates well with 
-        human-scored factual consistency. 
-        The counts of new words is just for info.
-        Text is already processed, its embeddings can be used for each claim.
+
+    def _evaluate_claim(self, claim, words_check=None):
+        """
+        Text is already processed, its embeddings can be used for the claim.
         Args:
             claim (str): claim, e.g. summary or short text - not the main text
             words_check (Set{str}): a set or map where the keys are the words 
                 of interest in the main text
-            embs_text (Dict{int: List[float]}): Map of token index (in text) 
-                to its obtained embedding
         Returns:
-            n_alarms, n_winners, n_newwords (int,int,int): Number of alarms, 
-                winners and new words for the claim. Each alarm is a location 
-                in the claim that may be inconsistent with respect to the text. 
-                Each winner is a plausible substitution from the text into an 
-                alarmed location in the claim. Each new word is a word existng 
-                in the claim but not in the text.
+            estime_info (List[float]): a list with results corresponding to the 
+                names of measures specified in self.output.
         """
         summ_words = word_tokenize(claim)
         summ_tagged = nltk.pos_tag(summ_words)
         # Find all words of interest in the summary:
         summ_iwordscheck = []
-        summ_wordsnew = []
         for i, (w, t) in enumerate(summ_tagged):
-            if w not in words_check:  # checking only what exists in the text
-                summ_wordsnew.append(w)
-            else:
+            if not words_check or w in words_check:  # if required, checking only what exists in the text
                 summ_iwordscheck.append(i)
-        n_newwords = len(summ_wordsnew)
         self.summ_toks, summ_map_iword_itoks = self._translate_words_to_tokens(summ_words)
-        embs_summ = self._get_embeddings(
+        embs_mask_summ = self._get_embeddings(
             tokens=self.summ_toks, ixs_words=summ_iwordscheck, map_words_to_tokens=summ_map_iword_itoks)
-        # All scalar products:
-        map_itokspair_sim = self._get_all_prods(embs_summ=embs_summ, embs_text=embs_text)
-        # Find max similarity with all occurrences of the incumbent tokens in the text:
-        map_itok_occurrs = self._find_occurrences_of_tokens(embs_summ, embs_text, map_itokspair_sim)
-        map_itok_csMax = {}
-        for itok, occurrs in map_itok_occurrs.items():
-            cs_max = max([a[1] for a in occurrs])
-            map_itok_csMax[itok] = cs_max
-        map_itok_winners = self._find_candidates(embs_summ, embs_text, map_itokspair_sim, map_itok_csMax)
-        n_alarms = sum([1 for k,v in map_itok_winners.items()])
-        n_winners = sum([len(v) for k,v in map_itok_winners.items()])
-        return n_alarms, n_winners, n_newwords
-    
+        embs_raw_summ = self._get_embeddings_raw(tokens=self.summ_toks)
+        # Consider only some layers:
+        estime_info = self._evaluate(
+            embs_mask_summ, self.embs_mask_text, 
+            embs_raw_summ, self.embs_raw_text)
+        return estime_info
+
+
+    def _get_embeddings_raw(self, tokens):
+        """Simply gets raw embeddings. Needed only for estime-soft."""
+        if not self.get_estime_soft:
+            return None
+        toks_ids = self.model_tokenizer.convert_tokens_to_ids(tokens)
+        input_tensor = torch.LongTensor([toks_ids])
+        word_embeddings = self.embeddings_raw(input_tensor)[0].numpy()
+        return word_embeddings
+
+
     def _get_embeddings(self, tokens, ixs_words, map_words_to_tokens):
         """
         Finds embeddings for all tokens of all words of interest. The embeddings 
@@ -187,6 +196,7 @@ class Estime:
             map_itok_embeddings = {**map_itok_embeddings, **map_itok_embeds}
         return map_itok_embeddings
 
+
     def _get_embeddings_of_sparse_words(self, tokens, ixs_words, map_words_to_tokens):
         """Gets results for the get_embeddings function, which combines the results
         from tokens from groups of sparsely spread words.
@@ -201,7 +211,7 @@ class Estime:
             map_itok_embeds (Dict{int: ndarray[float]}): Map of token index (in text) 
                 to its obtained embedding
         """
-        map_itok_embeds = {}
+        map_itok_embeddings = {}
         toks_mask = [map_words_to_tokens[i] for i in ixs_words]  # indexes (beg,end) of tokens to mask
         while toks_mask:
             i_tok_first = toks_mask[0][0]  # first token allowed to mask
@@ -218,13 +228,14 @@ class Estime:
             n_words_used = len(toks_mask_input)
             toks_mask = toks_mask[n_words_used:]
             # get embeddings for the input:
-            map_itok_embed = self._get_embeddings_from_input(
+            map_itok_embeds = self._get_embeddings_from_input(
                 tokens, 
                 ix_toks_input_beg=ix_toks_input_beg, 
                 ix_toks_input_end=ix_toks_input_end, 
                 toks_mask_input=toks_mask_input)
-            map_itok_embeds = {**map_itok_embeds, **map_itok_embed}  # from all inputs so far
-        return map_itok_embeds
+            map_itok_embeddings = {**map_itok_embeddings, **map_itok_embeds}  # from all inputs so far 
+        return map_itok_embeddings
+
 
     def _get_embeddings_from_input(self, tokens, ix_toks_input_beg, ix_toks_input_end, toks_mask_input):
         """
@@ -240,7 +251,7 @@ class Estime:
                 is index of first and one-past last tokens to mask.
         Returns:
             map_itok_embeds (Dict{int: ndarray[float]}): Map of token indexes
-                as in text 'tokens' to their embeddings. Covers first tokens
+                as in text tokens to their embeddings. Covers first tokens
                 of all words of interest.
         """
         # Ids of tokens in input for taking embedding
@@ -257,91 +268,65 @@ class Estime:
         input_tensor = torch.LongTensor([toks_ids]).to(self.device)
         outputs = self.model(input_tensor)
         # Contextual embedding:
-        emb_all = outputs[1][self.i_layer_context][0]  # all embeddings
+        emb_all = outputs[1][self.i_layer_context][0]  # all embeddings (means: for all tokens, at this layer)
         map_itok_embed = {}
         for itok, iembed in map_itok_iembed.items():  # itok is id of token exactly as in tokens
             map_itok_embed[itok] = emb_all[iembed].cpu().detach().numpy()
         return map_itok_embed
 
-    def _find_occurrences_of_tokens(self, embs_summ, embs_text, map_itokspair_sim):
-        """
-        Finds all occurences of summary tokens in the text. 
-        Finds also similarity of each occurrence to the summary token.
-        Args:
-            embs_summ (Dict{int: List[float]}): Map token index in summary to embedding
-            embs_text (Dict{int: List[float]}): Map token index in text to embedding
-            map_itokspair_sim (Dict{(int,int)):float}: Dictionary containing all 
-                products between summary and text embeddings of interest.
-                Key = duple: index of token in summary and index of token in text
-                Value = similarity of their embeddings
-        Returns:
-            map_itok_occurrs (Dict{int:List[(int,float)]}): Maps locations of
-                summary tokens to locations of their occurrences in the text.
-                key: index of suspect-token in summary; value: list of duples. 
-                Each duple: (1) index of an occurrence of the token in the text, 
-                (2) similarity of the occurrence to the token in the summary.
-        """
-        # Find all occurrences of the incumbent token:
-        map_itok_occurrs = {}  # info about all occurrences of the token in text
-        for itok_summ in embs_summ.keys():  # itok is index of the token in summary
-            tok_summ = self.summ_toks[itok_summ]
-            occurrs = []
-            for itok_text in embs_text.keys():
-                tok_text = self.text_toks[itok_text]
-                if tok_summ != tok_text:
-                    continue
-                sim = map_itokspair_sim[(itok_summ, itok_text)]
-                occurrs.append((itok_text, sim))
-            assert occurrs  # Checking only tokens existing in the text
-            map_itok_occurrs[itok_summ] = copy.deepcopy(occurrs)
-        return map_itok_occurrs
 
-    def _find_candidates(self, embs_summ, embs_text, map_itokspair_sim, map_itok_csMax):
+    def _evaluate(self, embs_summ, embs_text, embs_summ_raw, embs_text_raw):
         """
-        For each summary token finds all text tokens that could replace it
-        because they have higher context similarity to it. Returns info about
-        all summary tokens for which such potential replacements were found.
-        Tokens here are by the model's tokenizer.
         Args:
             embs_summ (Dict{int: List[float]}): Map of token indexes 
                 (in summary) to the corresponding embeddings
             embs_text (Dict{int: List[float]}): Map of token indexes 
                 (in text) to the corresponding embeddings
-            map_itokspair_sim (Dict{(int,int)):float}: Dictionary containing all 
-                products between summary and text embeddings of interest.
-                Key = duple: index of token in summary and index of token in text
-                Value = similarity of their embeddings
-            map_itok_csMax (Dict{int:float}): Map of token index in summary 
-                to maximal similarity of its embedding to embeddings of all 
-                occurrences of this token in the text.
+            embs_summ_raw and embs_text_raw - the same as above,
+                but with the raw embeddings
         Returns:
-            map_itok_winners Dict{int: List[(int,float)]}: A map giving info 
-                about all suspicious tokens in the summary.
-                A suspicious token is a summary token, for which the text has 
-                at least one token that is different as a string, but has 
-                embedding more similar to the summary tokem's embedding than 
-                all embedding of the occurrences of summary token in the text.
-                Key: index of a suspect token in the summary
-                Value: List of duple, listing all the 'winners' in the text. 
-                    Each duple is: index of a winner-token in the text, and
-                    similarity of its embedding to summary-token embedding.
+            List[float)] - List of results as specified in self.output
         """
-        # Find all candidates that are different from the incumbent:
-        map_itok_winners = {}
-        for itok_summ in embs_summ.keys():
+        # estime standard and soft:
+        n_alarms, cos_raw_avg = 0, 0
+        itoks_similar = []
+        for itok_summ, emb_summ in embs_summ.items():   
             tok_summ = self.summ_toks[itok_summ]
-            sim_threshold = map_itok_csMax[itok_summ]  # must get better than this
-            winners = []  # All winning candidates for this token
-            for itok_text in embs_text.keys():
-                tok_text = self.text_toks[itok_text]
-                if tok_summ == tok_text:
-                    continue  # not interesting in occurrences of incumbent token
-                sim = map_itokspair_sim[(itok_summ, itok_text)]
-                if sim > sim_threshold:
-                    winners.append((itok_text, sim))
-            if winners:
-                map_itok_winners[itok_summ] = copy.deepcopy(winners)
-        return map_itok_winners
+            itok_text_best = -1
+            sim_best = -1.0e30
+            for itok_text, emb_text in embs_text.items():
+                sim = dot(emb_summ, emb_text)
+                if sim > sim_best:
+                    sim_best = sim
+                    itok_text_best = itok_text
+            tok_text_best = self.text_toks[itok_text_best]
+            itoks_similar.append((itok_summ, itok_text_best, sim_best))
+            if tok_text_best != tok_summ:
+                n_alarms += 1
+            # Soft ESTIME:
+            if self.get_estime_soft:
+                emb_summ_nomask = embs_summ_raw[itok_summ]
+                emb_text_nomask = embs_text_raw[itok_text_best]
+                prod = dot(emb_summ_nomask, emb_text_nomask)
+                norm_summ, norm_text = norm(emb_summ_nomask), norm(emb_text_nomask)
+                cos_raw_avg += prod / (norm_summ * norm_text)
+        if self.get_estime_soft:
+            cos_raw_avg /= len(embs_summ)
+        # Coherence:
+        if self.get_estime_coherence:
+            itoks_summ = [a[0] for a in itoks_similar]
+            itoks_text = [a[1] for a in itoks_similar]
+            coherence = scipy.stats.kendalltau(itoks_summ, itoks_text, variant='c').correlation
+        result = []
+        for out_name in self.output:
+            if out_name == ESTIME_ALARMS:
+                result.append(n_alarms)
+            elif out_name == ESTIME_SOFT:
+                result.append(cos_raw_avg)
+            elif out_name == ESTIME_COHERENCE:
+                result.append(coherence)
+        return result
+
 
     def _select_indexes_separated(self, ixs):
         """Given a list of sorted integers, starts with the first and selects next ones
@@ -364,6 +349,7 @@ class Estime:
                 ixs_remain.append(ix)
         return ixs_select, ixs_remain
 
+
     def _group_indexes_separated(self, ixs):
         """Splits a sorted list of indexes (of words in a text) to groups (lists) 
         of indexes, such that indexes in each groups are separated by the given
@@ -380,6 +366,7 @@ class Estime:
             ixs_select, ixs_remain = self._select_indexes_separated(ixs_remain)
             groups.append(ixs_select)
         return groups
+
 
     def _get_map_words_intext(self, text_tagged):
         """
@@ -403,6 +390,7 @@ class Estime:
                 map_words_text[w].append(i)
         return map_words_text  
 
+
     def _translate_words_to_tokens(self, text_words):
         """Tokenizes text by model tokenizer.
         Keeps map of indexes of words into indexes of tokens.
@@ -424,15 +412,3 @@ class Estime:
             map_iword_itoks[ix_word] = (i_tok, i_tok_end)
             i_tok = i_tok_end
         return text_tokens, map_iword_itoks
-
-    def _get_all_prods(self, embs_summ, embs_text):
-        """Finds products of all embeddings of interest.
-        Given lists of embeddings (and their indexes) from summary and from text,
-        returns their products.
-        """
-        map_itokspair_sim = {}
-        for itok_summ, emb_summ in embs_summ.items():  # itok is token index in summary
-            for itok_text, emb_text in embs_text.items():
-                sim = dot(emb_summ, emb_text)
-                map_itokspair_sim[(itok_summ, itok_text)] = float(sim)
-        return map_itokspair_sim

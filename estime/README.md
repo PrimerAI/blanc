@@ -1,11 +1,11 @@
 # ESTIME
-This is the implementation of ESTIME as defined and used in [ESTIME: Estimation of Summary-to-Text Inconsistency by Mismatched Embeddings](https://aclanthology.org/2021.eval4nlp-1.10/).
+This is the implementation of ESTIME. The 'soft ESTIME' and 'coherence' were defined in [Consistency and Coherence from Points of Contextual Similarity](https://arxiv.org/abs/2112.11638); the 'number of alarms' was defined in [ESTIME: Estimation of Summary-to-Text Inconsistency by Mismatched Embeddings](https://aclanthology.org/2021.eval4nlp-1.10/).
 
 ESTIME is a reference-free estimator of summary quality with emphasis on factual consistency. It can be used for filtering generated summaries, or for estimating improvement of a generation system.
 
-Usage is simple: create `Estime`, and use `evaluate_claims`.
+Usage is simple: create `Estime`, and use `evaluate_claims`. When creating Estime, specify the list of names of the measures to obtain for each claim.
 
-The table below is made in the same way as the Table 1 in [ESTIME](https://aclanthology.org/2021.eval4nlp-1.10/), except that the number of systems here is updated from 16 to 17, following the later version of [SummEval](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00373/100686/SummEval-Re-evaluating-Summarization-Evaluation). This means that the correlations are taken here between arrays of 1700-length arrays (100 texts x 17 summary generation systems).
+The table below is made in the same way as the Table 1 in [ESTIME](https://aclanthology.org/2021.eval4nlp-1.10/), except that the number of systems here is updated from 16 to 17, following the later version of [SummEval](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00373/100686/SummEval-Re-evaluating-Summarization-Evaluation). This means that the correlations are taken here between arrays of 1700-length (100 texts x 17 summary generation systems).
 
 |model|consistency<br />Spearman|consistency<br />Kendall|relevance<br />Spearman|relevance<br />Kendall|coherence<br />Spearman|coherence<br />Kendall|fluency<br />Spearman|fluency<br />Kendall|
 |:--|--:|--:|--:|--:|--:|--:|--:|--:|

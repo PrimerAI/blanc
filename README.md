@@ -1,4 +1,28 @@
-# BLANC
+# Evaluation measures
+
+This repositary contains reference implementations and explanations to accompany [Primer.ai](https://primer.ai) research and publications related to evaluation measures, mostly for the purpose of summary evaluations.
+
+The evaluation measures include: 
+
+* BLANC-help (or simply 'BLANC'), BLANC-tune
+  * blanc.py
+  * All the info is in this page
+* Shannon Score, Information Difference, BLANC-Shannon
+  * shannon.py
+  * Info: [Shannon Score and Information Difference](https://github.com/PrimerAI/blanc/tree/master/shannon)
+* ESTIME, ESTIME-soft, ESTIME-coherence
+  * estime.py
+  * Info: [ESTIME (hard, soft and coherence)](https://github.com/PrimerAI/blanc/tree/master/estime)
+
+Annotated summary quality datasets: [data](https://github.com/PrimerAI/blanc/tree/master/data)
+
+
+## Setup
+1. Install Python 3.6 or higher
+2. Install with `pip install blanc`
+
+
+## BLANC
 This is the reference implementation of BLANC-help and BLANC-tune as defined in [Fill in the BLANC: Human-free quality estimation of document summaries](https://www.aclweb.org/anthology/2020.eval4nlp-1.2/).
 
 BLANC is a reference-free approach to the automatic estimation of document summary quality. Our goal is to measure the functional performance of a summary with an objective, reproducible, and fully automated method. Our approach achieves this by measuring the performance boost gained by a pre-trained language model with access to a document summary while carrying out its language understanding task on the document's text. Unlike ROUGE, BLANC does not require human-written reference summaries, allowing for fully human-free summary quality estimation.
@@ -6,18 +30,6 @@ BLANC is a reference-free approach to the automatic estimation of document summa
 Two types of BLANC scores were introduced in the paper and are available in this repo: BLANC-help and BLANC-tune. BLANC-help is faster to calculate (around 30% faster on CUDA with default settings), but BLANC-tune is more theoretically principled. They are around 90% correlated with each other, so either one can be used in most cases.<br />
 BLANC-help with gap=2 on average correlates the best with human scores [Sensitivity of BLANC to human-scored qualities of text summaries](https://arxiv.org/abs/2010.06716), it is now set as default. The original paper used gap=6. Optimal parameters for BLANC-help and for BLANC-tune are found by using 'max-help' criterion, without relying on human summaries or human scores, in [Is Human Scoring the Best Criteria for Summary Evaluation?](https://aclanthology.org/2021.findings-acl.192) (the paper points to the possible bias of human experts).
 
-## More
-The datasets: [data](https://github.com/PrimerAI/blanc/tree/master/data).
-
-More reference-free evaluation measures:
-
-* [Shannon Score and Information Difference](https://github.com/PrimerAI/blanc/tree/master/shannon) measures of summary quality.
-
-* [ESTIME (hard, soft and coherence)](https://github.com/PrimerAI/blanc/tree/master/estime) measures with emphasis on factual consistency.
-
-## Setup
-1. Install Python 3.6 or higher
-2. Install with `pip install blanc`
 
 ## Python Usage
 Basic usage:

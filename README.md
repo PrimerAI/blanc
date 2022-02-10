@@ -1,8 +1,8 @@
 # Evaluation measures
 
-This repositary contains reference implementations and explanations to accompany [Primer.ai](https://primer.ai) research and publications related to evaluation measures, mostly for the purpose of summary evaluations.
+This repositary contains reference implementations and explanations to accompany [Primer.ai](https://primer.ai) research and publications related to evaluation measures, mostly for the purpose of summary evaluation.
 
-The evaluation measures include: 
+These evaluation measures include:
 
 * BLANC-help (or simply 'BLANC'), BLANC-tune
   * blanc.py

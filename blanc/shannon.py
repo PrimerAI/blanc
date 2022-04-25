@@ -57,6 +57,7 @@ def get_model(name, size):
         max_input = 1024
 
     g = g.to('cuda')
+    g.config.return_dict = False
     g.eval()
     return g, t, eos, max_input
 

@@ -1,7 +1,7 @@
 # ESTIME
 
 ESTIME as the 'number of alarms' was defined in [ESTIME: Estimation of Summary-to-Text Inconsistency by Mismatched Embeddings](https://aclanthology.org/2021.eval4nlp-1.10/).
-ESTIME-soft and ESTIME-coherence were defined in [Consistency and Coherence from Points of Contextual Similarity](https://arxiv.org/abs/2112.11638)
+ESTIME-soft and ESTIME-coherence were defined in [Consistency and Coherence from Points of Contextual Similarity](https://arxiv.org/abs/2112.11638). Sourse: [estime](https://github.com/PrimerAI/blanc/blob/master/blanc/estime.py).
 
 ESTIME is a reference-free estimator of summary quality with emphasis on factual consistency. It can be used for filtering generated summaries, or for estimating improvement of a generation system.
 
@@ -15,7 +15,13 @@ Usage is simple: create `Estime`, and use `evaluate_claims`. When creating Estim
 [[5]]
 ```
 
-In this example only one summary is given to the text, and hence the list of results contains only one element [5] - the scores only for this summary. The scores list contains only single score =5, because by default the list of measures contains only one measure (ESTIME). For more options, see the docstring in [estime](https://github.com/PrimerAI/blanc/blob/master/blanc/estime.py).
+In this example only one summary is given to the text, and hence the list of results contains only one element [5] - the scores only for this summary. The scores list contains only single score =5, because by default the list of measures contains only one measure ESTIME_ALARMS. More can be included, e.g.: 
+
+```
+>>> estimator = Estime(output=[ESTIME_ALARMS, ESTIME_SOFT, ESTIME_COHERENCE])
+```
+
+For more options, see comments in the source [estime](https://github.com/PrimerAI/blanc/blob/master/blanc/estime.py).
 
 The table below is made in the same way as the Table 1 in [ESTIME](https://aclanthology.org/2021.eval4nlp-1.10/), except that the number of systems here is updated from 16 to 17, following the later version of [SummEval](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00373/100686/SummEval-Re-evaluating-Summarization-Evaluation). This means that the correlations are taken here between arrays of 1700-length (100 texts x 17 summary generation systems).
 

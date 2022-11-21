@@ -23,7 +23,7 @@ ESTIME_COHERENCE = 'coherence'  # estimation of summary coherence
 class Estime:
     """Estimator of factual inconsistencies between summaries (or other textual claims)
     and text. Usage: create `Estime`, and use `evaluate_claims`.
-    To get all the measures, use output=['alarms','soft','coherence'].
+    To get all the measures, use output=[ESTIME_ALARMS, ESTIME_SOFT, ESTIME_COHERENCE].
     """
     def __init__(
         self,

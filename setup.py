@@ -1,16 +1,18 @@
+import json
 import setuptools
-
-from blanc.__version__ import __version__
 
 with open("README.md", encoding="utf-8") as reader:
     long_description = reader.read()
+
+with open("blanc/version.json") as reader:
+    version = json.load(reader)["version"]
 
 with open("requirements.txt") as reader:
     requirements = [line.strip() for line in reader]
 
 setuptools.setup(
     name="blanc",
-    version=__version__,
+    version=version,
     author="Primer AI",
     author_email="blanc@primer.ai",
     description="Human-free quality estimation of document summaries",

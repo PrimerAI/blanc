@@ -16,10 +16,11 @@ Usage is simple: create `Estime`, and use `evaluate_claims`. When creating Estim
 [[5]]
 ```
 
-In this example only one summary is given to the text, and hence the list of results contains only one element [5] - the scores only for this summary. The scores list contains only single score =5, because by default the list of measures contains only one measure 'alarms'. More can be included, e.g.: 
+In this example only one summary is given to the text, and hence the list of results contains only one element [5] - the scores only for this summary. The scores list contains only single score =5, because by default the list of measures contains only one measure 'alarms'. More measures can be included, e.g.: 
 
 ```
 >>> estimator = Estime(output=['alarms', 'soft', 'coherence'])
+>>> estimator.evaluate_claims(text, [summary])
 [[5, 0.502, -0.25]]
 ```
 

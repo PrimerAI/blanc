@@ -20,6 +20,8 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/PrimerAI/blanc",
     packages=setuptools.find_packages(),
+    use_scm_version=True,
+    setup_requires=['setuptools_scm'],
     install_requires=requirements,
     include_package_data=True,
     classifiers=[

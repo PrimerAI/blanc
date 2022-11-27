@@ -14,16 +14,10 @@ import torch
 from transformers import BertForMaskedLM, BertTokenizer, BertModel
 
 
-# Names of the measures:
-ESTIME_ALARMS = 'alarms'  # original ESTIME by response of tokens to similar contexts
-ESTIME_SOFT = 'soft'  # soft ESTIME by response of cos between embeddings
-ESTIME_COHERENCE = 'coherence'  # estimation of summary coherence 
-
-
 class Estime:
     """Estimator of factual inconsistencies between summaries (or other textual claims)
     and text. Usage: create `Estime`, and use `evaluate_claims`.
-    To get all the measures, use output=[ESTIME_ALARMS, ESTIME_SOFT, ESTIME_COHERENCE].
+    To get all the measures, use output=['alarms', 'soft', 'coherence'].
     """
     def __init__(
         self,
@@ -31,7 +25,7 @@ class Estime:
         path_mdl_raw='bert-base-uncased',
         i_layer_context=21,
         device='cpu',
-        output=[ESTIME_ALARMS],
+        output=['alarms'],
         tags_check=None,
         tags_exclude=None,
         input_size_max=450,
@@ -61,8 +55,11 @@ class Estime:
         self.i_layer_context = i_layer_context
         self.device = device
         self.output = output
-        self.get_estime_soft = ESTIME_SOFT in self.output
-        self.get_estime_coherence = ESTIME_COHERENCE in self.output
+        self.ESTIME_ALARMS = 'alarms'  # original estime by response of tokens to similar contexts
+        self.ESTIME_SOFT = 'soft'  # soft estime by response of cos between embeddings
+        self.ESTIME_COHERENCE = 'coherence'  # estimation of summary coherence 
+        self.get_estime_soft = self.ESTIME_SOFT in self.output
+        self.get_estime_coherence = self.ESTIME_COHERENCE in self.output
         self.tags_check = tags_check
         self.tags_exclude = tags_exclude
         self.input_size_max = input_size_max
@@ -85,6 +82,7 @@ class Estime:
         self.text_toks = None
         self.embs_mask_text = None
         self.embs_raw_text = None
+        
 
 
     def evaluate_claims(self, text, claims):
@@ -303,7 +301,7 @@ class Estime:
             itoks_similar.append((itok_summ, itok_text_best, sim_best))
             if tok_text_best != tok_summ:
                 n_alarms += 1
-            # Soft ESTIME:
+            # Soft estime:
             if self.get_estime_soft:
                 emb_summ_nomask = embs_summ_raw[itok_summ]
                 emb_text_nomask = embs_text_raw[itok_text_best]
@@ -319,11 +317,11 @@ class Estime:
             coherence = scipy.stats.kendalltau(itoks_summ, itoks_text, variant='c').correlation
         result = []
         for out_name in self.output:
-            if out_name == ESTIME_ALARMS:
+            if out_name == self.ESTIME_ALARMS:
                 result.append(n_alarms)
-            elif out_name == ESTIME_SOFT:
+            elif out_name == self.ESTIME_SOFT:
                 result.append(cos_raw_avg)
-            elif out_name == ESTIME_COHERENCE:
+            elif out_name == self.ESTIME_COHERENCE:
                 result.append(coherence)
         return result
 

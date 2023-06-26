@@ -1,7 +1,7 @@
 import json
 import setuptools
 
-version = "0.3.0"
+version = "0.3.1"
 
 with open("README.md", encoding="utf-8") as reader:
     long_description = reader.read()

@@ -24,7 +24,7 @@ In this example only one summary is given to the text, and hence the list of res
 [[5, 0.502, -0.25]]
 ```
 
-For more options, see comments in the source [estime](https://github.com/PrimerAI/blanc/blob/master/blanc/estime.py).
+For more options, see comments in the source [estime](https://github.com/PrimerAI/blanc/blob/master/blanc/estime.py), or see [estime](https://github.com/PrimerAI/primer-research/tree/main/estime).
 
 The table below is made in the same way as the Table 1 in [ESTIME](https://aclanthology.org/2021.eval4nlp-1.10/), except that the number of systems here is updated from 16 to 17, following the later version of [SummEval](https://direct.mit.edu/tacl/article/doi/10.1162/tacl_a_00373/100686/SummEval-Re-evaluating-Summarization-Evaluation). This means that the correlations are taken here between arrays of 1700-length (100 texts x 17 summary generation systems).
 

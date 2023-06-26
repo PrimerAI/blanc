@@ -20,7 +20,9 @@ from transformers import (
 import numpy as np
 from nltk import sent_tokenize
 
-def get_model(name, size):
+def get_model(name, size, device='cuda'):
+    if device == 'cuda':
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
     if name == 'gpt2':
         t = GPT2Tokenizer.from_pretrained('gpt2')
         if size == 'base':
@@ -56,10 +58,35 @@ def get_model(name, size):
         eos = 4 # </s>
         max_input = 1024
 
-    g = g.to('cuda')
+    g = g.to(device)
     g.config.return_dict = False
     g.eval()
     return g, t, eos, max_input
+
+def prepare_inputs_for_generation(input_ids, past=None, **kwargs):
+    """Copied from gpt2 of huggingface transformers, but using it here separately, 
+    because in some versions this funciton worked differently, which caused errors."""
+    if past:  # only last token for inputs_ids if past is defined in kwargs
+        input_ids = input_ids[:, -1].unsqueeze(-1)
+
+    attention_mask = kwargs.get("attention_mask", None)
+    position_ids = kwargs.get("position_ids", None)
+
+    if attention_mask is not None and position_ids is None:
+        # create position_ids on the fly for batch generation
+        position_ids = attention_mask.long().cumsum(-1) - 1
+        position_ids.masked_fill_(attention_mask == 0, 1)
+        if past:
+            position_ids = position_ids[:, -1].unsqueeze(-1)
+    else:
+        position_ids = None
+    return {
+        "input_ids": input_ids,
+        "past_key_values": past,
+        "use_cache": kwargs.get("use_cache"),
+        "position_ids": position_ids,
+        "attention_mask": attention_mask,
+    }
 
 class Shannon:
     def __init__(
@@ -69,17 +96,22 @@ class Shannon:
         model_size='base',
         num_upstream=0,
         return_token_lls=False,
+        device='cuda'
     ):
         self.verbose = verbose
         self.language_model = language_model
         self.num_upstream = num_upstream
         self.return_token_lls = return_token_lls
-        self.g, self.t, self.eos, self.max_input = get_model(language_model, model_size)
+        self.device = device
+        if self.device == 'cuda':
+            self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.g, self.t, self.eos, self.max_input = get_model(
+            language_model, model_size, self.device)
 
     def measure(self, doc_tokens, prompt):
-        eos = torch.LongTensor([self.eos]).to('cuda')
+        eos = torch.LongTensor([self.eos]).to(self.device)
         if prompt is None or (prompt.dim() == 1 and len(prompt) == 0):
-            prompt = torch.LongTensor([]).to('cuda')
+            prompt = torch.LongTensor([]).to(self.device)
 
         token_lls = []
         success = []
@@ -92,7 +124,7 @@ class Shannon:
                     past = [t[:, :, :, 1:, :] for t in past]
 
             prefix = torch.cat([eos, prompt, upstream]).unsqueeze(0)
-            inputs = self.g.prepare_inputs_for_generation(prefix, past=past, use_cache=True, use_mems=True)
+            inputs = prepare_inputs_for_generation(prefix, past=past, use_cache=True, use_mems=True)
             with torch.no_grad():
                 out = self.g(**inputs)
 
@@ -134,8 +166,8 @@ class Shannon:
         if self.language_model in ['xlnet', 'xlm']:
             encode_args['add_special_tokens'] = False
 
-        sents_tokens = [self.t.encode(sent, **encode_args).to('cuda').view(-1) for sent in sents]
-        summ_tokens = self.t.encode(summ, **encode_args).to('cuda').view(-1)
+        sents_tokens = [self.t.encode(sent, **encode_args).to(self.device).view(-1) for sent in sents]
+        summ_tokens = self.t.encode(summ, **encode_args).to(self.device).view(-1)
         sents_tokens = [sent_tokens[:self.max_input - 1 - len(summ_tokens)] for sent_tokens in sents_tokens]
         doc_tokens = torch.cat(sents_tokens, dim=-1)
 
@@ -161,7 +193,9 @@ class Shannon:
                 if len(upstream_tensors) > 0:
                     upstream_context = torch.cat(upstream_tensors)
                 else:
-                    upstream_context = torch.LongTensor([]).cuda()
+                    upstream_context = torch.LongTensor([])
+                    if self.device == 'cuda':
+                        upstream_context = upstream_context.cuda()
 
                 base_prompt = upstream_context
                 help_prompt = torch.cat([summ_tokens, upstream_context])

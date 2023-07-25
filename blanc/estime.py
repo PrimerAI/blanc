@@ -33,6 +33,13 @@ class Estime:
         distance_word_min=8,
         include_all_tokens=False):
         """
+        If output includes either 'soft' or 'coherence', then all the summary tokens are considered,
+        (regardless of 'include_all_tokens'), as it should be for 'soft' and 'coherence'. 
+        If output is only 'alarms', then all the summary tokens are considered only with the setting
+        include_all_tokens=True. The default include_all_tokens=False corresponds to the original 
+        'hard' ESTIME, and is appropriate for normal summaries that have a reasonable tokens overlap 
+        with the text. The original 'hard' ESTIME is useless for intentionally abnormal summaries that 
+        have no any tokens common with text: it would give zero alarms.  
         Args:
             path_mdl (str): model for embeddings of masked tokens
             path_mdl_raw (str): model for raw embeddings
@@ -44,7 +51,7 @@ class Estime:
             tags_exclude (List[str]): List or set of part-of-speach tags that should
                 not be considered. Has priority over tags_check.
             include_all_tokens (Boolean): If True then all summary tokens are considered.
-                Otherwise only tokens existing in the text are considered.
+                If False and if output includes only 'alarms', then only tokens existing in the text are considered.
             input_size_max (int): length of input for the model as number of tokens
             margin (int): number of tokens on input edges not to take embeddings from
             distance_word_min (int): minimal distance between the masked tokens 
@@ -66,6 +73,8 @@ class Estime:
         self.margin = margin
         self.distance_word_min = distance_word_min
         self.include_all_tokens = include_all_tokens
+        if 'soft' in output or 'coherence' in output:
+            self.include_all_tokens = True
         self.model_tokenizer = None
         self.model = None
         self.model_tokenizer = BertTokenizer.from_pretrained(path_mdl)

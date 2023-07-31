@@ -16,8 +16,15 @@ from transformers import BertForMaskedLM, BertTokenizer, BertModel
 
 class Estime:
     """Estimator of factual inconsistencies between summaries (or other textual claims)
-    and text. Usage: create `Estime`, and use `evaluate_claims`.
-    To get all the measures, use output=['alarms', 'soft', 'coherence'].
+    and text. Usage: create `Estime`, and use `evaluate_claims()`.
+    In creating Estime, specify the names of the desired measures in the list 'output'. 
+    The function evaluate_claims() will return (for each claim) the list of results in 
+    the same order. The list 'output' can also include:
+        'alarms': the original ESTIME
+        'alarms_adjusted': the original ESTIME, extrapolated to non-overlapping tokens
+        'alarms_alltokens': ESTIME on all (not only overlapped) summary tokens
+        'soft': the soft ESTIME
+        'coherence': measure of summary coherence
     """
     def __init__(
         self,
@@ -30,16 +37,8 @@ class Estime:
         tags_exclude=None,
         input_size_max=450,
         margin=50,
-        distance_word_min=8,
-        include_all_tokens=False):
-        """
-        If output includes either 'soft' or 'coherence', then all the summary tokens are considered,
-        (regardless of 'include_all_tokens'), as it should be for 'soft' and 'coherence'. 
-        If output is only 'alarms', then all the summary tokens are considered only with the setting
-        include_all_tokens=True. The default include_all_tokens=False corresponds to the original 
-        'hard' ESTIME, and is appropriate for normal summaries that have a reasonable tokens overlap 
-        with the text. The original 'hard' ESTIME is useless for intentionally abnormal summaries that 
-        have no any tokens common with text: it would give zero alarms.  
+        distance_word_min=8):
+        """  
         Args:
             path_mdl (str): model for embeddings of masked tokens
             path_mdl_raw (str): model for raw embeddings
@@ -50,21 +49,26 @@ class Estime:
                 no matter which parts of speech they are.
             tags_exclude (List[str]): List or set of part-of-speach tags that should
                 not be considered. Has priority over tags_check.
-            include_all_tokens (Boolean): If True then all summary tokens are considered.
-                If False and if output includes only 'alarms', then only tokens existing in the text are considered.
             input_size_max (int): length of input for the model as number of tokens
             margin (int): number of tokens on input edges not to take embeddings from
             distance_word_min (int): minimal distance between the masked tokens 
                 from which embeddings are to ne taken in a single input
-            output (List[str]): list of names of measures to get in claim evaluations
-
+            output (List[str]): list of names of measures to get in claim evaluations. 
+                The list must be nonempty and can include:
+                'alarms', 'alarms_adjusted', 'alarms_alltokens', 'soft', 'coherence'.
+                The function evaluate_claims() will return (for each claim) the list of 
+                results in the same order.
         """
         self.i_layer_context = i_layer_context
         self.device = device
+        assert output
         self.output = output
-        self.ESTIME_ALARMS = 'alarms'  # original estime by response of tokens to similar contexts
-        self.ESTIME_SOFT = 'soft'  # soft estime by response of cos between embeddings
-        self.ESTIME_COHERENCE = 'coherence'  # estimation of summary coherence 
+        self.ESTIME_ALARMS = 'alarms'  # original estime: by response of tokens to similar contexts
+        self.ESTIME_ALLTOKENS = 'alarms_alltokens'  # estime on all (not only overlapped) summary tokens
+        self.ESTIME_ADJUSTED = 'alarms_adjusted'  # original estime, extrapolated to non-overlapping tokens
+        self.ESTIME_SOFT = 'soft'  # soft estime by response of similarity between embeddings
+        self.ESTIME_COHERENCE = 'coherence'  # estimation of summary coherence
+        self.get_estime_adjusted = self.ESTIME_ADJUSTED in self.output
         self.get_estime_soft = self.ESTIME_SOFT in self.output
         self.get_estime_coherence = self.ESTIME_COHERENCE in self.output
         self.tags_check = tags_check
@@ -72,9 +76,6 @@ class Estime:
         self.input_size_max = input_size_max
         self.margin = margin
         self.distance_word_min = distance_word_min
-        self.include_all_tokens = include_all_tokens
-        if 'soft' in output or 'coherence' in output:
-            self.include_all_tokens = True
         self.model_tokenizer = None
         self.model = None
         self.model_tokenizer = BertTokenizer.from_pretrained(path_mdl)
@@ -86,12 +87,12 @@ class Estime:
             for param in self.model_raw.parameters():
                 param.requires_grad = False
             self.embeddings_raw = self.model_raw.get_input_embeddings()
-        # Convenient data (tokenized summary and text):
+        # Convenient data (including tokenized summary and text):
+        self.text_map_wordscheck = None
         self.summ_toks = None 
         self.text_toks = None
         self.embs_mask_text = None
         self.embs_raw_text = None
-        
 
 
     def evaluate_claims(self, text, claims):
@@ -115,8 +116,8 @@ class Estime:
         text_words = word_tokenize(text)
         text_tagged = nltk.pos_tag(text_words)
         # Find all words of interest in the text, tokenize:
-        text_map_wordscheck = self._get_map_words_intext(text_tagged)
-        text_iwordscheck = sorted([item for sublist in text_map_wordscheck.values() for item in sublist])
+        self.text_map_wordscheck = self._get_map_words_intext(text_tagged)
+        text_iwordscheck = sorted([item for sublist in self.text_map_wordscheck.values() for item in sublist])
         self.text_toks, text_map_iword_itoks = self._translate_words_to_tokens(text_words)
         # All embeddings of interest in the text:
         self.embs_mask_text = self._get_embeddings(
@@ -128,10 +129,7 @@ class Estime:
         claims_info = []
         for claim in claims:
             claim = unicodedata.normalize('NFKD', claim)
-            if self.include_all_tokens:
-                claim_info = self._evaluate_claim(claim)
-            else:
-                claim_info = self._evaluate_claim(claim, text_map_wordscheck)
+            claim_info = self._evaluate_claim(claim)
             claims_info.append(claim_info)
         self.summ_toks = None 
         self.text_toks = None
@@ -151,19 +149,23 @@ class Estime:
         """
         summ_words = word_tokenize(claim)
         summ_tagged = nltk.pos_tag(summ_words)
-        # Find all words of interest in the summary:
-        summ_iwordscheck = []
+        summ_iwordscheck, summ_iwords_overlap = [],[]  # Find all words of interest in the summary
         for i, (w, t) in enumerate(summ_tagged):
             if not words_check or w in words_check:  # if required, checking only what exists in the text
                 summ_iwordscheck.append(i)
+            if not self.text_map_wordscheck or w in self.text_map_wordscheck:
+                summ_iwords_overlap.append(i)
         self.summ_toks, summ_map_iword_itoks = self._translate_words_to_tokens(summ_words)
         embs_mask_summ = self._get_embeddings(
             tokens=self.summ_toks, ixs_words=summ_iwordscheck, map_words_to_tokens=summ_map_iword_itoks)
         embs_raw_summ = self._get_embeddings_raw(tokens=self.summ_toks)
-        # Consider only some layers:
+        summ_itoksoverlap = set()
+        for iword in summ_iwords_overlap:
+            itok = summ_map_iword_itoks[iword][0]  # only first token of each word
+            summ_itoksoverlap.add(itok)
         estime_info = self._evaluate(
             embs_mask_summ, self.embs_mask_text, 
-            embs_raw_summ, self.embs_raw_text)
+            embs_raw_summ, self.embs_raw_text, summ_itokscheck=summ_itoksoverlap)
         return estime_info
 
 
@@ -275,27 +277,29 @@ class Estime:
         input_tensor = torch.LongTensor([toks_ids]).to(self.device)
         outputs = self.model(input_tensor)
         # Contextual embedding:
-        emb_all = outputs[1][self.i_layer_context][0]  # all embeddings (means: for all tokens, at this layer)
+        emb_all = outputs[1][self.i_layer_context][0]  # all embeddings (for all tokens, at this layer)
         map_itok_embed = {}
         for itok, iembed in map_itok_iembed.items():  # itok is id of token exactly as in tokens
             map_itok_embed[itok] = emb_all[iembed].cpu().detach().numpy()
         return map_itok_embed
 
 
-    def _evaluate(self, embs_summ, embs_text, embs_summ_raw, embs_text_raw):
+    def _evaluate(self, embs_summ, embs_text, embs_summ_raw, embs_text_raw, summ_itokscheck=None):
         """
         Args:
             embs_summ (Dict{int: List[float]}): Map of token indexes 
                 (in summary) to the corresponding embeddings
             embs_text (Dict{int: List[float]}): Map of token indexes 
                 (in text) to the corresponding embeddings
-            embs_summ_raw and embs_text_raw - the same as above,
-                but with the raw embeddings
+            embs_summ_raw and embs_text_raw - the same as above, but with the raw embeddings
+            summ_itokscheck (Set[int]): Set of indexes of tokens (in summary)
+                that must be verified for alarms. 
+                This is needed for calculating the original and 'adjusted' ESTIME.
         Returns:
-            List[float)] - List of results as specified in self.output
+            List[float)] - List of results in order as specified in self.output
         """
-        # estime standard and soft:
-        n_alarms, cos_raw_avg = 0, 0
+        # estime standard, adjusted, all-tokens and soft:
+        n_alarms, n_alarms_alltoks, cos_raw_avg = 0, 0, 0
         itoks_similar = []
         for itok_summ, emb_summ in embs_summ.items():   
             tok_summ = self.summ_toks[itok_summ]
@@ -309,7 +313,9 @@ class Estime:
             tok_text_best = self.text_toks[itok_text_best]
             itoks_similar.append((itok_summ, itok_text_best, sim_best))
             if tok_text_best != tok_summ:
-                n_alarms += 1
+                n_alarms_alltoks += 1
+                if not summ_itokscheck or itok_summ in summ_itokscheck:
+                    n_alarms += 1
             # Soft estime:
             if self.get_estime_soft:
                 emb_summ_nomask = embs_summ_raw[itok_summ]
@@ -319,6 +325,12 @@ class Estime:
                 cos_raw_avg += prod / (norm_summ * norm_text)
         if self.get_estime_soft:
             cos_raw_avg /= len(embs_summ)
+        # estime-alarms-adjusted:
+        if self.get_estime_adjusted:
+            if not summ_itokscheck:
+                n_alarms_adj = len(embs_summ)
+            else:
+                n_alarms_adj = n_alarms * len(embs_summ) / len(summ_itokscheck)
         # Coherence:
         if self.get_estime_coherence:
             itoks_summ = [a[0] for a in itoks_similar]
@@ -328,6 +340,10 @@ class Estime:
         for out_name in self.output:
             if out_name == self.ESTIME_ALARMS:
                 result.append(n_alarms)
+            elif out_name == self.ESTIME_ADJUSTED:
+                result.append(n_alarms_adj)
+            elif out_name == self.ESTIME_ALLTOKENS:
+                result.append(n_alarms_alltoks)
             elif out_name == self.ESTIME_SOFT:
                 result.append(cos_raw_avg)
             elif out_name == self.ESTIME_COHERENCE:

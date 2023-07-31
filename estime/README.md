@@ -16,13 +16,16 @@ Usage is simple: create `Estime`, and use `evaluate_claims`. When creating Estim
 [[5]]
 ```
 
-In this example only one summary is given to the text, and hence the list of results contains only one element [5] - the scores only for this summary. The scores list contains only single score =5, because by default the list of measures contains only one measure 'alarms'. More measures can be included, e.g.: 
+Default `device` in Estime() is `device`='cpu'. It can be set `device`='cuda'.
+
+In the example above only one summary is given to the text, and hence the list of results contains only one element [5] - the scores only for this summary. The scores list contains only single score =5, because by default the list of measures contains only one measure 'alarms'. More measures can be included: 'alarms', 'alarms_adjusted', 'alarms_alltokens', 'soft', 'coherence'. For example:
 
 ```
->>> estimator = Estime(output=['alarms', 'soft', 'coherence'])
+>>> estimator = Estime(output=['alarms', 'alarms_adjusted', 'soft', 'coherence'])
 >>> estimator.evaluate_claims(text, [summary])
-[[5, 0.502, -0.25]]
+[[5, 7.5, 0.502, -0.25]]
 ```
+The results appear in the same order as the names given in `output`. The measures 'alarms' (the original ESTIME), 'soft' and 'coherence' are as defined in the papers. The only difference is that when there are no any tokens overlap between the claim and the text, the 'alarms' is set to the number of the tokens in the summary. Unlike 'soft', the original ESTIME does not make good estimation for the cases where the number of overlap tokens is much less than the total number of summary tokens. Starting from the version 0.3.3, the measure 'alarms_adjusted' can be added. It is defined as `alarms_adjusted = alarms * N / M`, where M is the number of overlap tokens, and N is the total number of summary tokens. Thus, it serves as an extrapolation of the 'alarms' to the total number of summary tokens. When M=0, the 'alarms_adjusted' is set to N. For curiocity (not recommended), the 'alarms_alltokens' also can be added, it is defined as `alarms_alltokens = alarms + N - M`, meaning that any non-overlapping token is counted as an alarm. 
 
 For more options, see comments in the source [estime](https://github.com/PrimerAI/blanc/blob/master/blanc/estime.py), or see [estime](https://github.com/PrimerAI/primer-research/tree/main/estime).
 
